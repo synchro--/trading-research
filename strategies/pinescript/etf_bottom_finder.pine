@@ -1,0 +1,42 @@
+//@version=6
+// Overlay only. Not an engine strategy. See strategies/DESIGN.md appendix A.
+// Intended timeframe: Weekly (1W). Daily RSI(14) crossing 30 is not a macro bottom.
+indicator("Macro Lump-Sum ETF Bottom Finder", overlay=true)
+
+// ============================================
+// INPUTS & PARAMETERS
+// ============================================
+sma200_len   = input.int(200, "Macro 200-Period SMA")
+rsi_len      = input.int(14, "Macro RSI Period")
+rsi_thresh   = input.int(35, "Oversold Sweep RSI (must have printed <= this)")
+dd_lookback  = input.int(250, "Drawdown Lookback (Trading Days/Periods)")
+dd_min_pct   = input.float(10.0, "Min % Drawdown from Local High to Consider", step=0.5)
+
+// ============================================
+// MACRO BOTTOM CALCULATIONS
+// ============================================
+sma200 = ta.sma(close, sma200_len)
+rsi    = ta.rsi(close, rsi_len)
+
+peak_price   = ta.highest(high, dd_lookback)
+drawdown_pct = ((peak_price - close) / peak_price) * 100.0
+
+near_or_below_200 = close <= (sma200 * 1.03)
+is_exhausted      = ta.lowest(rsi, rsi_len) <= rsi_thresh
+is_significant_dd = drawdown_pct >= dd_min_pct
+
+rsi_reclaim  = is_exhausted and ta.crossover(rsi, 30)
+sma_reclaim  = ta.crossover(close, sma200)
+macro_buy_signal = near_or_below_200 and is_significant_dd and (rsi_reclaim or sma_reclaim)
+
+// ============================================
+// PLOTS — entry-zone flags only (no trail / no stop)
+// ============================================
+plot(sma200, "Macro 200 SMA", color=color.yellow, linewidth=3)
+
+plotshape(macro_buy_signal, title="LUMP-SUM BUY ZONE", style=shape.diamond, location=location.belowbar, color=color.lime, size=size.large, text="ADD")
+plotshape(macro_buy_signal, title="Entry flag", style=shape.flag, location=location.belowbar, color=color.lime, size=size.small)
+
+bgcolor(near_or_below_200 and is_significant_dd ? color.new(color.green, 90) : na)
+
+alertcondition(macro_buy_signal, title="ETF add zone", message="ETF Bottom Finder: add zone")
