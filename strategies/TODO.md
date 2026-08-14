@@ -28,13 +28,13 @@ Follow [DESIGN.md](DESIGN.md). Do not invent rules. Check boxes as you finish. E
 
 Implement DESIGN.md §7. Mirror `ema_gc_adaptive.pine` / v1. Do not implement in the design pass.
 
-- [ ] Alpaca daily fetch + cache under `backtesting/data/` (gitignored). Reuse `backtesting/alpaca/client_stub.py` as downloader only. Make `1Day` actually `TimeFrame.Day`.
-- [ ] Single-position broker: T+1 open entries, prior-bar trail vs `low`, fill `min(open, trail)` on a stop, regime flatten next open, commission + slippage bps.
-- [ ] `backtesting/strategies/ema_gc_adaptive.py` from DESIGN v1 numbers (table in DESIGN §3.7).
-- [ ] `backtesting/engine/` loop, types, metrics.
-- [ ] CLI: `python -m backtesting.cli --symbol SMH --start 2018-01-01 --end 2024-12-31`.
-- [ ] Synthetic fixture: one known entry and a trail or regime exit at the expected price.
-- [ ] One real run (SMH daily 2018–2024) from cache → `trades.csv` + `equity.csv` + stdout summary.
+- [x] Alpaca daily fetch + cache under `backtesting/data/` (gitignored). Reuse `backtesting/alpaca/client_stub.py` as downloader only. Make `1Day` actually `TimeFrame.Day`. Yahoo fallback if keys are missing.
+- [x] Single-position broker: T+1 open entries, prior-bar trail vs `low`, fill `min(open, trail)` on a stop, regime flatten next open, commission + slippage bps.
+- [x] `backtesting/strategies/ema_gc_adaptive.py` from DESIGN v1 numbers (table in DESIGN §3.7).
+- [x] `backtesting/engine/` loop, types, metrics.
+- [x] CLI: `python -m backtesting.cli --symbol SMH --start 2018-01-01 --end 2024-12-31`.
+- [x] Synthetic fixture: one known entry and a trail or regime exit at the expected price.
+- [x] One real run (SMH daily 2018–2024) from cache → `trades.csv` + `equity.csv` + stdout summary.
 
 **Acceptance**
 

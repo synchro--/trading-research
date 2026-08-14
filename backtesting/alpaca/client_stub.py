@@ -72,11 +72,28 @@ class AlpacaProvider:
                    end: Optional[str] = None,
                    limit: Optional[int] = None) -> List[Bar]:
         tf = self._to_timeframe(timeframe)
-        req = StockBarsRequest(symbol_or_symbols=symbol,
-                               timeframe=tf,
-                               start=start,
-                               end=end,
-                               limit=limit)
+        start_dt = self._parse_dt(start) if start else None
+        end_dt = self._parse_dt(end) if end else None
+        adj = None
+        feed = None
+        try:
+            from alpaca.data.enums import Adjustment, DataFeed
+            adj = Adjustment.SPLIT
+            feed = DataFeed.IEX
+        except Exception:
+            pass
+        kwargs = dict(
+            symbol_or_symbols=symbol,
+            timeframe=tf,
+            start=start_dt,
+            end=end_dt,
+            limit=limit,
+        )
+        if adj is not None:
+            kwargs["adjustment"] = adj
+        if feed is not None:
+            kwargs["feed"] = feed
+        req = StockBarsRequest(**kwargs)
         resp = self.data_client.get_stock_bars(req)
         bars = resp[symbol] if hasattr(resp, '__getitem__') else resp.data.get(symbol, [])  # type: ignore
         out: List[Bar] = []
@@ -111,19 +128,28 @@ class AlpacaProvider:
 
     # --- Helpers ---
     @staticmethod
+    def _parse_dt(value: str):
+        from datetime import datetime, timezone
+        raw = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    @staticmethod
     def _to_timeframe(tf: str):
-        tf_map = {
-            "1Min": getattr(TimeFrame, 'Minute', None) or TimeFrame(1, 'Min'),
-            "5Min": getattr(TimeFrame, 'Minute', None) or TimeFrame(5, 'Min'),
-            "15Min": getattr(TimeFrame, 'Minute', None) or TimeFrame(15, 'Min'),
-            "1Hour": getattr(TimeFrame, 'Hour', None) or TimeFrame(1, 'Hour'),
-            "1Day": getattr(TimeFrame, 'Day', None) or TimeFrame(1, 'Day'),
+        from alpaca.data.timeframe import TimeFrameUnit
+        key = tf.replace(" ", "")
+        mapping = {
+            "1Min": TimeFrame.Minute,
+            "1Hour": TimeFrame.Hour,
+            "1Day": TimeFrame.Day,
         }
-        if tf in tf_map and tf_map[tf] is not None:
-            # Some alpaca-py versions use enums like TimeFrame.Minute; newer may use values
-            val = tf_map[tf]
-            return val if isinstance(val, TimeFrame) else TimeFrame.Minute  # best-effort fallback
-        # Fallback: try to interpret common cases
-        if hasattr(TimeFrame, 'from_str'):
-            return TimeFrame.from_str(tf)  # type: ignore
-        return TimeFrame.Day  # default fallback
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+        n = int("".join(ch for ch in key if ch.isdigit()) or "1")
+        if "Min" in key:
+            return TimeFrame(n, TimeFrameUnit.Minute)
+        if "Hour" in key:
+            return TimeFrame(n, TimeFrameUnit.Hour)
+        return TimeFrame(1, TimeFrameUnit.Day)
