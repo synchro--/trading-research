@@ -1,0 +1,102 @@
+//@version=5
+strategy("Golden Cross EMA Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ============================================
+// INPUT PARAMETERS
+// ============================================
+fast_ema = input.int(50, title="Fast EMA", minval=1)
+slow_ema = input.int(200, title="Slow EMA", minval=1)
+stop_loss_pct = input.float(2.0, title="Stop Loss %", minval=0.1, maxval=10.0, step=0.1)
+take_profit_pct = input.float(4.0, title="Take Profit %", minval=0.1, maxval=20.0, step=0.1)
+
+// ============================================
+// CALCULATIONS
+// ============================================
+ema_fast = ta.ema(close, fast_ema)
+ema_slow = ta.ema(close, slow_ema)
+
+// Golden Cross: Fast EMA crosses above Slow EMA (Bullish)
+golden_cross = ta.crossover(ema_fast, ema_slow)
+// Death Cross: Fast EMA crosses below Slow EMA (Bearish)
+death_cross = ta.crossunder(ema_fast, ema_slow)
+
+// Trend confirmation: Price above both EMAs for long, below both for short
+trend_bullish = close > ema_fast and close > ema_slow
+trend_bearish = close < ema_fast and close < ema_slow
+
+// ============================================
+// ENTRY CONDITIONS
+// ============================================
+long_condition = golden_cross and trend_bullish
+short_condition = death_cross and trend_bearish
+
+// ============================================
+// STRATEGY LOGIC
+// ============================================
+if (long_condition)
+    // Calculate stop loss and take profit levels
+    stop_loss_price = close * (1 - stop_loss_pct / 100)
+    take_profit_price = close * (1 + take_profit_pct / 100)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit Long", "Long", stop=stop_loss_price, limit=take_profit_price)
+
+if (short_condition)
+    // Calculate stop loss and take profit levels
+    stop_loss_price = close * (1 + stop_loss_pct / 100)
+    take_profit_price = close * (1 - take_profit_pct / 100)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit Short", "Short", stop=stop_loss_price, limit=take_profit_price)
+
+// ============================================
+// PLOTTING
+// ============================================
+plot(ema_fast, "Fast EMA", color=color.blue, linewidth=2)
+plot(ema_slow, "Slow EMA", color=color.red, linewidth=2)
+
+// ============================================
+// VISIBLE ENTRY SIGNALS - LARGE AND PROMINENT
+// ============================================
+// Large green arrow for LONG entry (Golden Cross)
+plotshape(long_condition, style=shape.arrowup, location=location.belowbar, 
+          color=color.new(color.green, 0), size=size.large, title="🟢 LONG ENTRY SIGNAL")
+          
+// Large red arrow for SHORT entry (Death Cross)
+plotshape(short_condition, style=shape.arrowdown, location=location.abovebar, 
+          color=color.new(color.red, 0), size=size.large, title="🔴 SHORT ENTRY SIGNAL")
+
+// Text labels with entry information
+if (long_condition)
+    label.new(bar_index, low, "🟢 BUY\nEntry: " + str.tostring(close, "#.##") + 
+              "\nSL: " + str.tostring(close * (1 - stop_loss_pct / 100), "#.##") + 
+              "\nTP: " + str.tostring(close * (1 + take_profit_pct / 100), "#.##"),
+              style=label.style_label_up, color=color.green, textcolor=color.white, 
+              size=size.normal, yloc=yloc.belowbar)
+
+if (short_condition)
+    label.new(bar_index, high, "🔴 SELL\nEntry: " + str.tostring(close, "#.##") + 
+              "\nSL: " + str.tostring(close * (1 + stop_loss_pct / 100), "#.##") + 
+              "\nTP: " + str.tostring(close * (1 - take_profit_pct / 100), "#.##"),
+              style=label.style_label_down, color=color.red, textcolor=color.white, 
+              size=size.normal, yloc=yloc.abovebar)
+
+// Background highlight when signal triggers
+bgcolor(long_condition ? color.new(color.green, 80) : short_condition ? color.new(color.red, 80) : na, 
+        title="Signal Background")
+
+// Background color for trend
+bgcolor(trend_bullish ? color.new(color.green, 95) : trend_bearish ? color.new(color.red, 95) : na, 
+        title="Trend Background")
+
+// ============================================
+// ALERT CONDITIONS
+// ============================================
+alertcondition(long_condition, title="🟢 Golden Cross LONG Signal", 
+               message="🟢 GOLDEN CROSS LONG ENTRY SIGNAL! Price: {{close}}, Entry: {{close}}, Stop Loss: " + 
+               str.tostring(close * (1 - stop_loss_pct / 100), "#.##") + ", Take Profit: " + 
+               str.tostring(close * (1 + take_profit_pct / 100), "#.##"))
+
+alertcondition(short_condition, title="🔴 Death Cross SHORT Signal", 
+               message="🔴 DEATH CROSS SHORT ENTRY SIGNAL! Price: {{close}}, Entry: {{close}}, Stop Loss: " + 
+               str.tostring(close * (1 + stop_loss_pct / 100), "#.##") + ", Take Profit: " + 
+               str.tostring(close * (1 - take_profit_pct / 100), "#.##"))
+

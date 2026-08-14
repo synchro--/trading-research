@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Notebooks and data
+.ipynb_checkpoints/
+notebooks/
+data/
+backtesting/data/
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# Env/secrets
+.env
+.env.*
+*.secret

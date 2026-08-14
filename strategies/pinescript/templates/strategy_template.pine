@@ -1,0 +1,62 @@
+//@version=6
+strategy("Strategy Template (v6)",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.1,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=false)
+
+// -------------------------
+// Inputs
+// -------------------------
+risk_per_trade = input.float(1.0, "Risk per trade %", minval=0.1, maxval=10.0, step=0.1)
+use_stop       = input.bool(true,  "Use Stop/Take Profit")
+sl_pct         = input.float(1.0,  "Stop Loss %",      minval=0.1, maxval=50.0, step=0.1)
+tp_pct         = input.float(2.0,  "Take Profit %",    minval=0.1, maxval=100.0, step=0.1)
+
+fastLen        = input.int(10, "Fast MA", minval=1)
+slowLen        = input.int(30, "Slow MA", minval=1)
+
+// -------------------------
+// Signals (example crossover)
+// Replace with your own logic
+// -------------------------
+fast = ta.ema(close, fastLen)
+slow = ta.ema(close, slowLen)
+
+plot(fast, color=color.orange, title="EMA Fast")
+plot(slow, color=color.blue,   title="EMA Slow")
+
+longSignal  = ta.crossover(fast, slow)
+shortSignal = ta.crossunder(fast, slow)
+
+// -------------------------
+// Position sizing (risk-based)
+// -------------------------
+equity      = strategy.equity
+risk_value  = equity * risk_per_trade / 100.0
+qty         = risk_value / close
+
+// -------------------------
+// Entries
+// -------------------------
+if longSignal
+    strategy.entry("Long", strategy.long,  qty=qty)
+if shortSignal
+    strategy.entry("Short", strategy.short, qty=qty)
+
+// -------------------------
+// Exits (stop/limit in % from entry price proxy via current price)
+// -------------------------
+if use_stop
+    strategy.exit("Exit Long",  from_entry="Long",  stop=close * (1 - sl_pct/100.0), limit=close * (1 + tp_pct/100.0))
+    strategy.exit("Exit Short", from_entry="Short", stop=close * (1 + sl_pct/100.0), limit=close * (1 - tp_pct/100.0))
+
+// -------------------------
+// Notes
+// - Replace the crossover logic with your signal(s)
+// - Consider adding a trading session/time filter and a max bars back setting
+// - Validate sizing and commission assumptions match your venue/broker
+// - For walk-forward/out-of-sample tests, clone the script and change parameters

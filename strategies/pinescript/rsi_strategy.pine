@@ -1,0 +1,154 @@
+//@version=5
+strategy("RSI Strategy", overlay=false, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ============================================
+// INPUT PARAMETERS
+// ============================================
+rsi_length = input.int(14, title="RSI Length", minval=1)
+rsi_overbought = input.int(70, title="RSI Overbought", minval=50, maxval=100)
+rsi_oversold = input.int(30, title="RSI Oversold", minval=0, maxval=50)
+stop_loss_pct = input.float(2.0, title="Stop Loss %", minval=0.1, maxval=10.0, step=0.1)
+take_profit_pct = input.float(3.0, title="Take Profit %", minval=0.1, maxval=20.0, step=0.1)
+use_divergence = input.bool(true, title="Use RSI Divergence")
+
+// ============================================
+// CALCULATIONS
+// ============================================
+rsi = ta.rsi(close, rsi_length)
+
+// Divergence detection function
+detect_divergence() =>
+    var float last_rsi_high = na
+    var float last_price_high = na
+    var float last_rsi_low = na
+    var float last_price_low = na
+    
+    bullish_div = false
+    bearish_div = false
+    
+    // Bullish divergence: Price makes lower low, RSI makes higher low
+    if (rsi < rsi_oversold)
+        if (not na(last_rsi_low) and not na(last_price_low))
+            if (low < last_price_low and rsi > last_rsi_low)
+                bullish_div := true
+        last_rsi_low := rsi
+        last_price_low := low
+    
+    // Bearish divergence: Price makes higher high, RSI makes lower high
+    if (rsi > rsi_overbought)
+        if (not na(last_rsi_high) and not na(last_price_high))
+            if (high > last_price_high and rsi < last_rsi_high)
+                bearish_div := true
+        last_rsi_high := rsi
+        last_price_high := high
+    
+    [bullish_div, bearish_div]
+
+[bullish_divergence, bearish_divergence] = detect_divergence()
+
+// ============================================
+// ENTRY CONDITIONS
+// ============================================
+// Long entry: RSI crosses above oversold OR bullish divergence
+long_condition = (rsi < rsi_oversold and ta.crossover(rsi, rsi_oversold)) or 
+                 (use_divergence and bullish_divergence)
+
+// Short entry: RSI crosses below overbought OR bearish divergence
+short_condition = (rsi > rsi_overbought and ta.crossunder(rsi, rsi_overbought)) or 
+                  (use_divergence and bearish_divergence)
+
+// Additional confirmation: RSI momentum
+rsi_momentum_bullish = rsi > ta.rsi(close, rsi_length)[1] // RSI rising
+rsi_momentum_bearish = rsi < ta.rsi(close, rsi_length)[1] // RSI falling
+
+// Enhanced entry conditions with momentum
+long_condition_enhanced = long_condition and rsi_momentum_bullish
+short_condition_enhanced = short_condition and rsi_momentum_bearish
+
+// ============================================
+// STRATEGY LOGIC
+// ============================================
+if (long_condition_enhanced)
+    stop_loss_price = close * (1 - stop_loss_pct / 100)
+    take_profit_price = close * (1 + take_profit_pct / 100)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit Long", "Long", stop=stop_loss_price, limit=take_profit_price)
+
+if (short_condition_enhanced)
+    stop_loss_price = close * (1 + stop_loss_pct / 100)
+    take_profit_price = close * (1 - take_profit_pct / 100)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit Short", "Short", stop=stop_loss_price, limit=take_profit_price)
+
+// Exit on opposite RSI extreme
+if (strategy.position_size > 0 and rsi > rsi_overbought)
+    strategy.close("Long", comment="RSI Overbought")
+    
+if (strategy.position_size < 0 and rsi < rsi_oversold)
+    strategy.close("Short", comment="RSI Oversold")
+
+// ============================================
+// PLOTTING
+// ============================================
+plot(rsi, "RSI", color=color.blue, linewidth=2)
+hline(rsi_overbought, "Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(rsi_oversold, "Oversold", color=color.green, linestyle=hline.style_dashed)
+hline(50, "Midline", color=color.gray, linestyle=hline.style_dotted)
+
+// Fill background
+fill(hline(rsi_overbought), hline(50), color=color.new(color.red, 90), title="Overbought Zone")
+fill(hline(50), hline(rsi_oversold), color=color.new(color.green, 90), title="Oversold Zone")
+
+// ============================================
+// VISIBLE ENTRY SIGNALS - LARGE AND PROMINENT
+// ============================================
+// Large green arrow for LONG entry
+plotshape(long_condition_enhanced, style=shape.arrowup, location=location.bottom, 
+          color=color.new(color.green, 0), size=size.large, title="🟢 LONG ENTRY SIGNAL")
+          
+// Large red arrow for SHORT entry
+plotshape(short_condition_enhanced, style=shape.arrowdown, location=location.top, 
+          color=color.new(color.red, 0), size=size.large, title="🔴 SHORT ENTRY SIGNAL")
+
+// Text labels with entry information
+if (long_condition_enhanced)
+    label.new(bar_index, rsi_oversold - 5, "🟢 BUY\nRSI: " + str.tostring(rsi, "#.##") + 
+              "\nEntry: " + str.tostring(close, "#.##") + 
+              "\nSL: " + str.tostring(close * (1 - stop_loss_pct / 100), "#.##") + 
+              "\nTP: " + str.tostring(close * (1 + take_profit_pct / 100), "#.##"),
+              style=label.style_label_up, color=color.green, textcolor=color.white, 
+              size=size.normal)
+
+if (short_condition_enhanced)
+    label.new(bar_index, rsi_overbought + 5, "🔴 SELL\nRSI: " + str.tostring(rsi, "#.##") + 
+              "\nEntry: " + str.tostring(close, "#.##") + 
+              "\nSL: " + str.tostring(close * (1 + stop_loss_pct / 100), "#.##") + 
+              "\nTP: " + str.tostring(close * (1 - take_profit_pct / 100), "#.##"),
+              style=label.style_label_down, color=color.red, textcolor=color.white, 
+              size=size.normal)
+
+// Background highlight when signal triggers
+bgcolor(long_condition_enhanced ? color.new(color.green, 85) : short_condition_enhanced ? color.new(color.red, 85) : na, 
+        title="Signal Background")
+
+// Plot divergence signals (smaller, informational)
+plotshape(use_divergence and bullish_divergence, style=shape.circle, location=location.bottom, 
+          color=color.lime, size=size.small, title="Bullish Divergence")
+plotshape(use_divergence and bearish_divergence, style=shape.circle, location=location.top, 
+          color=color.orange, size=size.small, title="Bearish Divergence")
+
+// Note: RSI strategy runs in separate pane, signals are highly visible with large arrows and labels
+
+// ============================================
+// ALERT CONDITIONS
+// ============================================
+alertcondition(long_condition_enhanced, title="🟢 RSI LONG Signal", 
+               message="🟢 RSI LONG ENTRY SIGNAL! RSI: {{plot_0}}, Price: {{close}}, Entry: {{close}}, Stop Loss: " + 
+               str.tostring(close * (1 - stop_loss_pct / 100), "#.##") + ", Take Profit: " + 
+               str.tostring(close * (1 + take_profit_pct / 100), "#.##"))
+
+alertcondition(short_condition_enhanced, title="🔴 RSI SHORT Signal", 
+               message="🔴 RSI SHORT ENTRY SIGNAL! RSI: {{plot_0}}, Price: {{close}}, Entry: {{close}}, Stop Loss: " + 
+               str.tostring(close * (1 + stop_loss_pct / 100), "#.##") + ", Take Profit: " + 
+               str.tostring(close * (1 - take_profit_pct / 100), "#.##"))
+
