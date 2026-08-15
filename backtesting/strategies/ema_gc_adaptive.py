@@ -68,6 +68,9 @@ class EmaPullbackV1:
             and in_band
         )
 
+    def should_flatten(self, i: int) -> bool:
+        return bool(self.regime_break[i])
+
     def initial_risk(self, i: int) -> float:
         atr = self.atr[i]
         if np.isnan(atr) or atr <= 0:

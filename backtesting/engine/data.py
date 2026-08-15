@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -47,25 +46,26 @@ def read_csv(path: Path) -> list[Bar]:
 
 def _has_alpaca_keys() -> bool:
     try:
-        from dotenv import load_dotenv
+        from backtesting.alpaca.credentials import alpaca_credentials
 
-        load_dotenv(ROOT / "backtesting" / "alpaca" / ".env")
-        load_dotenv(ROOT / ".env")
+        alpaca_credentials()
+        return True
     except Exception:
-        pass
-    return bool(os.getenv("ALPACA_API_KEY_ID") and os.getenv("ALPACA_API_SECRET_KEY"))
+        return False
 
 
-def fetch_alpaca(symbol: str, start: str, end: str) -> list[Bar]:
+def fetch_alpaca(symbol: str, start: str, end: str) -> tuple[list[Bar], str]:
     from backtesting.alpaca.client_stub import AlpacaProvider
 
     provider = AlpacaProvider()
     raw = provider.fetch_bars(symbol, timeframe="1Day", start=start, end=end)
-    return [
+    bars = [
         Bar(t=str(b.t)[:10], o=b.o, h=b.h, l=b.l, c=b.c, v=b.v)
         for b in raw
         if b.h >= b.l and b.c > 0
     ]
+    feed = str(getattr(provider, "_last_feed", "iex"))
+    return bars, feed
 
 
 def _http_json(url: str) -> dict:
@@ -144,8 +144,8 @@ def load_bars(
         errors: list[str] = []
         if _has_alpaca_keys():
             try:
-                bars = fetch_alpaca(symbol, fetch_start, end)
-                source = "alpaca"
+                bars, feed = fetch_alpaca(symbol, fetch_start, end)
+                source = f"alpaca:{feed}"
             except Exception as e:
                 errors.append(f"alpaca: {e}")
         else:

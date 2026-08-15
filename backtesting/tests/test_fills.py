@@ -132,5 +132,30 @@ class EndToEndSynthetic(unittest.TestCase):
             self.assertGreater(result.trades[0].entry_px, 0)
 
 
+class MetricsTests(unittest.TestCase):
+    def test_cagr_sharpe_sortino_maxdd(self):
+        from backtesting.engine.metrics import cagr, sharpe, sortino, summarize
+        from backtesting.engine.types import EquityPoint, RunResult
+
+        eq = [
+            EquityPoint("2020-01-01", 100.0, 0.0),
+            EquityPoint("2021-01-01", 110.0, 0.0),
+        ]
+        self.assertAlmostEqual(cagr(eq), 0.10, delta=0.002)
+        rets = [0.01, -0.005, 0.002]
+        self.assertGreater(sharpe(rets), 0)
+        self.assertGreater(sortino(rets), sharpe(rets) - 1)
+        result = RunResult("X", trades=[], equity=[
+            EquityPoint("2020-01-02", 100.0, 0.0),
+            EquityPoint("2020-01-03", 90.0, 0.10),
+            EquityPoint("2020-01-06", 95.0, 0.05),
+        ], fills=[], open_position=None)
+        m = summarize(result)
+        self.assertAlmostEqual(m["max_dd"], 0.10)
+        self.assertIn("cagr", m)
+        self.assertIn("sharpe", m)
+        self.assertIn("sortino", m)
+
+
 if __name__ == "__main__":
     unittest.main()

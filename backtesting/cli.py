@@ -59,6 +59,8 @@ def main() -> None:
     p.add_argument("--cash", type=float, default=20_000.0)
     p.add_argument("--commission-bps", type=float, default=10.0)
     p.add_argument("--slippage-bps", type=float, default=5.0)
+    p.add_argument("--strategy", default="ema_pullback",
+                   help="ema_pullback | ema50_reclaim | rsi_trend_dip | donchian_55_20 | all")
     p.add_argument("--force-fetch", action="store_true")
     p.add_argument("--out", default="", help="Output dir (default backtesting/data/runs/SYMBOL)")
     args = p.parse_args()
@@ -71,30 +73,38 @@ def main() -> None:
     if not raw:
         p.error("pass --symbol or --symbols")
 
+    from backtesting.strategies import REGISTRY
+
+    names = list(REGISTRY) if args.strategy.strip().lower() == "all" else [args.strategy]
     summaries = []
-    for name in raw:
-        symbol = _resolve(name)
-        bars, source = load_bars(symbol, args.start, args.end, force=args.force_fetch)
-        result = run(
-            bars,
-            symbol=symbol,
-            start=args.start,
-            initial_cash=args.cash,
-            commission_bps=args.commission_bps,
-            slippage_bps=args.slippage_bps,
-            source=source,
-        )
-        metrics = summarize(result)
-        metrics["alias"] = name
-        print(format_summary(metrics), f"  src={source}  bars={len(bars)}")
-        out = Path(args.out) if args.out and len(raw) == 1 else DATA_DIR / "runs" / symbol
-        _write_outputs(result, out, metrics)
-        summaries.append(metrics)
+    for strat_name in names:
+        for name in raw:
+            symbol = _resolve(name)
+            bars, source = load_bars(symbol, args.start, args.end, force=args.force_fetch)
+            result = run(
+                bars,
+                symbol=symbol,
+                start=args.start,
+                initial_cash=args.cash,
+                commission_bps=args.commission_bps,
+                slippage_bps=args.slippage_bps,
+                strategy=strat_name,
+                source=source,
+            )
+            metrics = summarize(result)
+            metrics["alias"] = name
+            metrics["strategy"] = strat_name
+            print(f"[{strat_name}]", format_summary(metrics), f"  src={source}  bars={len(bars)}")
+            out = DATA_DIR / "runs" / strat_name / symbol
+            if args.out and len(raw) == 1 and len(names) == 1:
+                out = Path(args.out)
+            _write_outputs(result, out, metrics)
+            summaries.append(metrics)
 
     if len(summaries) > 1:
         print("\n--- batch ---")
         for m in summaries:
-            print(format_summary(m))
+            print(f"[{m['strategy']}]", format_summary(m))
 
 
 if __name__ == "__main__":

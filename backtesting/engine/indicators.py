@@ -65,6 +65,24 @@ def rsi(close: np.ndarray, length: int = 14) -> np.ndarray:
     return out
 
 
+def rolling_max(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    for i in range(length - 1, len(src)):
+        out[i] = float(np.max(src[i - length + 1 : i + 1]))
+    return out
+
+
+def rolling_min(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    for i in range(length - 1, len(src)):
+        out[i] = float(np.min(src[i - length + 1 : i + 1]))
+    return out
+
+
 def crossover(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     out = np.zeros(len(a), dtype=bool)
     out[1:] = (a[1:] > b[1:]) & (a[:-1] <= b[:-1])
