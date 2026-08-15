@@ -4,6 +4,7 @@ from __future__ import annotations
 from backtesting.engine.broker import Broker
 from backtesting.engine.types import Bar, EquityPoint, PendingEntry, RunResult
 from backtesting.strategies import build
+from backtesting.strategies.risk import Sizing, size_qty
 
 
 def run(
@@ -25,6 +26,8 @@ def run(
     risk_pct = getattr(getattr(strat, "cfg", None), "risk_pct", None) or getattr(
         getattr(strat, "risk", None), "risk_pct", 1.5
     )
+    sizing: Sizing = getattr(strat, "sizing", None) or Sizing(mode="risk", value=risk_pct)
+    uses_trail: bool = getattr(strat, "uses_trail", True)
     broker = Broker(cash=initial_cash, commission_bps=commission_bps, slippage_bps=slippage_bps)
 
     pending_entry: PendingEntry | None = None
@@ -42,10 +45,16 @@ def run(
             pending_entry = None
 
         if live and pending_entry is not None and broker.position is None:
-            broker.buy(bar.t, bar.o, pending_entry.qty, pending_entry.initial_risk)
+            broker.buy(
+                bar.t,
+                bar.o,
+                pending_entry.qty,
+                pending_entry.initial_risk,
+                initial_trail=None if uses_trail else float("-inf"),
+            )
         pending_entry = None
 
-        if live and broker.position is not None:
+        if live and uses_trail and broker.position is not None:
             stop_px = broker.stop_fill_price(bar.o, bar.l)
             if stop_px is not None:
                 broker.sell(bar.t, stop_px, "trail")
@@ -53,14 +62,16 @@ def run(
 
         pos = broker.position
         if pos is not None:
-            pos.trail = max(pos.trail, strat.trail_candidate(i, pos.entry_px, pos.initial_risk))
+            if uses_trail:
+                pos.trail = max(pos.trail, strat.trail_candidate(i, pos.entry_px, pos.initial_risk))
             if live and strat.should_flatten(i):
                 pending_flatten = True
         elif live:
             if strat.long_signal(i):
                 risk = strat.initial_risk(i)
                 eq = broker.equity(bar.c)
-                qty = (eq * (risk_pct / 100.0) / risk) if risk > 0 else 0.0
+                vol = getattr(strat, "realized_vol", None)
+                qty = size_qty(sizing, eq, bar.c, risk, vol(i) if vol else 0.0)
                 if qty > 0:
                     pending_entry = PendingEntry(initial_risk=risk, qty=qty)
 

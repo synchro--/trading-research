@@ -46,3 +46,20 @@ Implement DESIGN.md §7. Mirror `ema_gc_adaptive.pine` / v1. Do not implement in
 **Out of scope**
 
 Walk-forward, parameter grids, paper orders, shorts, minute bars, weekly/OBV/Keltner, live trading.
+
+---
+
+## Literature benchmark pass (done — see DESIGN §6b)
+
+- [x] Buy-and-hold benchmark per symbol. Nothing below it on Sharpe is an "edge".
+- [x] Split-adjust prices in the loader. Alpaca's IEX tier ignores `adjustment=`; KLAC's 10:1 split read as a -90% crash and poisoned every KLAC number in the prior run.
+- [x] Sizing modes (`risk`, `equity`, `voltarget`) and an opt-out from the ATR trail, so no-stop published systems run under their own rules.
+- [x] Faber SMA200, Connors RSI(2), TSMOM 12-month, Connors + ATR trail.
+- [x] Regime split (2022 bear vs 2023-2026) and a warmup-safe start date.
+
+## Next
+
+- [ ] Fix the warmup hole properly: the loop should refuse to trade until every indicator a strategy uses is non-NaN, instead of relying on the caller to pick a safe `--start`.
+- [ ] Decide on the RSI gate in v1 — the data says it filters nothing. Delete it or justify it from a trade log.
+- [ ] Longer and wider sample before promoting anything: pre-2020 history (needs a non-Alpaca source) and non-tech names, to break the correlation in the current book.
+- [ ] If chasing Faber: test a buffer band around the SMA to cut the 2022 whipsaw. That is a parameter change — needs the wider sample first, or it is curve-fitting.

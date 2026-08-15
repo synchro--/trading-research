@@ -35,7 +35,14 @@ class Broker:
     def _commission(self, notional: float) -> float:
         return abs(notional) * (self.commission_bps / 10_000.0)
 
-    def buy(self, t: str, px: float, qty: float, initial_risk: float) -> None:
+    def buy(
+        self,
+        t: str,
+        px: float,
+        qty: float,
+        initial_risk: float,
+        initial_trail: float | None = None,
+    ) -> None:
         if self.position is not None or qty <= 0 or initial_risk <= 0:
             return
         fill_px = self._apply_slip(px, "buy")
@@ -52,7 +59,7 @@ class Broker:
             if total > self.cash:
                 return
         self.cash -= total
-        trail = fill_px - initial_risk
+        trail = (fill_px - initial_risk) if initial_trail is None else initial_trail
         self.position = Position(
             qty=qty,
             entry_px=fill_px,

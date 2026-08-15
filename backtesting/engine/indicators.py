@@ -65,6 +65,36 @@ def rsi(close: np.ndarray, length: int = 14) -> np.ndarray:
     return out
 
 
+def sma(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    csum = np.cumsum(np.insert(src, 0, 0.0))
+    out[length - 1 :] = (csum[length:] - csum[:-length]) / length
+    return out
+
+
+def realized_vol(close: np.ndarray, length: int = 60, periods: int = 252) -> np.ndarray:
+    """Annualized stdev of daily simple returns over a trailing window."""
+    out = np.full(len(close), np.nan, dtype=float)
+    rets = np.full(len(close), np.nan, dtype=float)
+    rets[1:] = close[1:] / close[:-1] - 1.0
+    for i in range(length, len(close)):
+        w = rets[i - length + 1 : i + 1]
+        if np.any(np.isnan(w)):
+            continue
+        out[i] = float(np.std(w, ddof=1) * np.sqrt(periods))
+    return out
+
+
+def pct_change_n(close: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(close), np.nan, dtype=float)
+    if len(close) <= length:
+        return out
+    out[length:] = close[length:] / close[:-length] - 1.0
+    return out
+
+
 def rolling_max(src: np.ndarray, length: int) -> np.ndarray:
     out = np.full(len(src), np.nan, dtype=float)
     if length <= 0 or len(src) < length:

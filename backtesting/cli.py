@@ -9,7 +9,7 @@ from pathlib import Path
 
 from backtesting.engine.data import DATA_DIR, load_bars
 from backtesting.engine.loop import run
-from backtesting.engine.metrics import format_summary, summarize
+from backtesting.engine.metrics import buy_hold, format_summary, summarize
 
 # User names → Alpaca/Yahoo symbols. SPX is the SPY ETF (Alpaca has no cash index).
 # MSCI World is URTH (iShares MSCI World).
@@ -59,8 +59,7 @@ def main() -> None:
     p.add_argument("--cash", type=float, default=20_000.0)
     p.add_argument("--commission-bps", type=float, default=10.0)
     p.add_argument("--slippage-bps", type=float, default=5.0)
-    p.add_argument("--strategy", default="ema_pullback",
-                   help="ema_pullback | ema50_reclaim | rsi_trend_dip | donchian_55_20 | all")
+    p.add_argument("--strategy", default="ema_pullback", help="a registered strategy name, or 'all'")
     p.add_argument("--force-fetch", action="store_true")
     p.add_argument("--out", default="", help="Output dir (default backtesting/data/runs/SYMBOL)")
     args = p.parse_args()
@@ -94,6 +93,9 @@ def main() -> None:
             metrics = summarize(result)
             metrics["alias"] = name
             metrics["strategy"] = strat_name
+            metrics["benchmark"] = buy_hold(
+                bars, args.start, args.cash, args.commission_bps, args.slippage_bps
+            )
             print(f"[{strat_name}]", format_summary(metrics), f"  src={source}  bars={len(bars)}")
             out = DATA_DIR / "runs" / strat_name / symbol
             if args.out and len(raw) == 1 and len(names) == 1:

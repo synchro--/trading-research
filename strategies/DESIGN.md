@@ -156,6 +156,48 @@ Do not add these in engine 0.1.
 
 ---
 
+## 6b. Measured baseline (2026-08, engine 0.1)
+
+Book: KLAC, SMH, NET, GOOGL, SPY, QQQ, URTH. Live window **2021-06-01 → 2026-08-13**
+(the first date every 200-period indicator is warm — starting earlier silently gifts
+buy-and-hold the months when SMA200-based rules are still NaN and stuck in cash).
+Reproduce with `python -m backtesting.compare`.
+
+| System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
+|---|---|---|---|---|
+| Buy & hold | 0.79 | 22.8% | 43.5% | — |
+| Faber SMA200 | **0.85** | 15.0% | **22.1%** | 4/7 |
+| TSMOM 12-month | 0.71 | 10.0% | 23.5% | 2/7 |
+| Connors RSI(2) | 0.50 | 3.3% | 9.6% | 1/7 |
+| Connors RSI(2) + ATR trail | 0.48 | 6.5% | 17.1% | 2/7 |
+| **EMA Pullback v1** | 0.44 | 1.1% | 5.5% | 0/7 |
+| Naked EMA50 reclaim | 0.44 | 1.1% | 5.5% | 0/7 |
+| Donchian 55/20 | 0.16 | 1.0% | 9.1% | 0/7 |
+| RSI trend dip | -0.00 | -0.0% | 5.8% | 0/7 |
+
+Findings that change the v2 priorities:
+
+1. **v1's RSI gate is inert.** Naked EMA50 reclaim scores identically on every
+   symbol except GOOGL. Item 2 above (retune the RSI band) should become *delete
+   the RSI band* unless a trade log shows it filtering something.
+2. **v1's 1.1% CAGR is a sizing artifact.** 1.5% risk over a 3.5-ATR stop deploys
+   ~15-20% of equity and the rules are in the market ~33% of the time, so the book
+   is ~94% cash. A 20% vol target leaves Sharpe flat (0.44 → 0.46) and triples CAGR
+   (1.1% → 3.9%). Sharpe is scale-invariant, CAGR is not — never compare systems on
+   CAGR when their sizing differs.
+3. **The frozen risk model is the good part.** v1 has by far the lowest drawdown of
+   anything tested (5.5% median vs 43.5% buy-and-hold) and lost 1.8% in 2022 while
+   buy-and-hold gave back 40.9%. The entry signal is the weak half, not the exit.
+4. **Faber's 200-day rule is the benchmark to beat**, not v1. It is simpler than v1,
+   beats it on Sharpe and by 14 points of CAGR, and halves buy-and-hold's drawdown.
+   Its weakness is whipsaw: 35 round trips in 2022 for -8.6%.
+
+Sample caveat: 7 correlated US tech-heavy names, ~5 years, one bear market. Median
+Sharpe gaps under ~0.2 are not distinguishable from noise here. Do not promote a
+system into v2 on this evidence alone.
+
+---
+
 ## 7. Engine 0.1 contract
 
 Spec only in this pass. Implementation is a later, cheaper-model job. Follow this contract; do not “improve” it.

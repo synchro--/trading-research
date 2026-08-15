@@ -44,6 +44,54 @@ def read_csv(path: Path) -> list[Bar]:
     return out
 
 
+# Alpaca's `adjustment` flag is a no-op on the IEX tier: RAW, SPLIT and ALL all come
+# back unadjusted, so a 10:1 split reads as a -90% bar and every strategy "sees" a
+# crash that never happened. Detect and back-adjust ourselves.
+_SPLIT_RATIOS = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 15.0, 20.0, 30.0, 50.0]
+_SPLIT_TOL = 0.04
+
+
+def _match_split_ratio(gap: float) -> float | None:
+    """Return the split ratio if an overnight gap looks like a clean n:1 or 1:n split."""
+    for r in _SPLIT_RATIOS:
+        for cand in (r, 1.0 / r):
+            if abs(gap / cand - 1.0) <= _SPLIT_TOL:
+                return cand
+    return None
+
+
+def adjust_splits(bars: list[Bar], symbol: str = "") -> tuple[list[Bar], list[str]]:
+    """Back-adjust prices for unadjusted splits. Returns (bars, notes).
+
+    Measured on prev_close -> today's open: the split lands exactly on the overnight
+    boundary, while close-to-close also carries that day's real move and can miss the
+    ratio (KLAC's 10:1 reads as 9.47 on closes but 10.14 on the open).
+    """
+    notes: list[str] = []
+    if len(bars) < 2:
+        return bars, notes
+    splits: list[tuple[int, float]] = []
+    for i in range(1, len(bars)):
+        prev_c, o, c = bars[i - 1].c, bars[i].o, bars[i].c
+        if prev_c <= 0 or o <= 0 or c <= 0:
+            continue
+        gap = prev_c / o
+        if 0.72 < gap < 1.4:
+            continue
+        ratio = _match_split_ratio(gap)
+        if ratio is not None:
+            splits.append((i, ratio))
+            notes.append(f"{symbol} split {ratio:g}:1 on {bars[i].t} ({prev_c:.2f} -> {o:.2f} open)")
+    if not splits:
+        return bars, notes
+    out = list(bars)
+    for idx, ratio in splits:
+        for j in range(idx):
+            b = out[j]
+            out[j] = Bar(t=b.t, o=b.o / ratio, h=b.h / ratio, l=b.l / ratio, c=b.c / ratio, v=b.v * ratio)
+    return out, notes
+
+
 def _has_alpaca_keys() -> bool:
     try:
         from backtesting.alpaca.credentials import alpaca_credentials
@@ -172,4 +220,9 @@ def load_bars(
     bars = [b for b in bars if b.t <= end]
     if not bars:
         raise RuntimeError(f"No bars for {symbol} up to {end}")
+    bars, split_notes = adjust_splits(bars, symbol)
+    for note in split_notes:
+        print(f"  [data] back-adjusted {note}")
+    if split_notes:
+        source += "+splitadj"
     return bars, source

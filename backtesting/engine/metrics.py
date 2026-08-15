@@ -58,6 +58,32 @@ def sortino(returns: list[float], mar: float = _RF) -> float:
     return ((mean - mar_d) / dd) * math.sqrt(_PERIODS)
 
 
+def buy_hold(bars, start: str | None, initial_cash: float = 20_000.0,
+             commission_bps: float = 10.0, slippage_bps: float = 5.0) -> dict:
+    """Benchmark: buy the first live open, hold to the end. Same costs as the engine."""
+    live = [b for b in bars if start is None or b.t[:10] >= start[:10]]
+    if len(live) < 2:
+        return {"cagr": 0.0, "sharpe": 0.0, "sortino": None, "max_dd": 0.0, "return_pct": 0.0}
+    entry_px = live[0].o * (1.0 + slippage_bps / 10_000.0)
+    qty = (initial_cash * (1.0 - commission_bps / 10_000.0)) / entry_px
+    eq: list[EquityPoint] = []
+    peak = initial_cash
+    for b in live:
+        e = qty * b.c
+        peak = max(peak, e)
+        eq.append(EquityPoint(t=b.t, equity=e, drawdown=(peak - e) / peak if peak else 0.0))
+    rets = _daily_returns(eq)
+    sh = sharpe(rets)
+    so = sortino(rets)
+    return {
+        "cagr": cagr(eq),
+        "sharpe": None if not math.isfinite(sh) else sh,
+        "sortino": None if not math.isfinite(so) else so,
+        "max_dd": max((p.drawdown for p in eq), default=0.0),
+        "return_pct": eq[-1].equity / initial_cash - 1.0,
+    }
+
+
 def summarize(result: RunResult) -> dict:
     trades: list[Trade] = result.trades
     n = len(trades)

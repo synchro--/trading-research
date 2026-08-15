@@ -4,10 +4,12 @@ from __future__ import annotations
 import unittest
 
 from backtesting.engine.broker import Broker
+from backtesting.engine.data import adjust_splits
 from backtesting.engine.indicators import crossover
 from backtesting.engine.loop import run
 from backtesting.engine.types import Bar
 from backtesting.strategies.ema_gc_adaptive import EmaPullbackV1
+from backtesting.strategies.risk import Sizing, size_qty
 import numpy as np
 
 
@@ -159,3 +161,51 @@ class MetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SplitAdjustmentTests(unittest.TestCase):
+    """Alpaca's IEX tier returns unadjusted prices; the loader must fix splits itself."""
+
+    def test_ten_for_one_split_is_back_adjusted(self):
+        bars = [_bar("2026-06-10", 2000, 2010, 1990, 2000)]
+        bars.append(_bar("2026-06-11", 2400, 2420, 2380, 2400))
+        bars.append(_bar("2026-06-12", 237, 240, 235, 240))
+        bars.append(_bar("2026-06-15", 240, 245, 238, 244))
+        out, notes = adjust_splits(bars, "KLAC")
+        self.assertEqual(len(notes), 1)
+        self.assertAlmostEqual(out[0].c, 200.0)
+        self.assertAlmostEqual(out[1].c, 240.0)
+        self.assertAlmostEqual(out[2].c, 240.0)  # post-split bars untouched
+        overnight = out[2].c / out[1].c
+        self.assertTrue(0.9 < overnight < 1.1, "split gap must vanish after adjustment")
+
+    def test_real_crash_is_not_treated_as_a_split(self):
+        # -38% is a crash, not a clean split ratio: leave it alone.
+        bars = [_bar("2020-03-10", 100, 101, 99, 100), _bar("2020-03-11", 63, 64, 61, 62)]
+        out, notes = adjust_splits(bars, "X")
+        self.assertEqual(notes, [])
+        self.assertAlmostEqual(out[0].c, 100.0)
+
+    def test_clean_series_is_untouched(self):
+        bars = [_bar(f"2020-01-{d:02d}", 100, 101, 99, 100 + d) for d in range(1, 10)]
+        out, notes = adjust_splits(bars, "X")
+        self.assertEqual(notes, [])
+        self.assertEqual([b.c for b in out], [b.c for b in bars])
+
+
+class SizingTests(unittest.TestCase):
+    def test_risk_mode_sizes_off_stop_distance(self):
+        qty = size_qty(Sizing("risk", 1.5), equity=20_000, price=100, initial_risk=10, realized_vol=0.3)
+        self.assertAlmostEqual(qty, 30.0)  # 1.5% of 20k = 300 risk / 10 per share
+
+    def test_equity_mode_deploys_fraction_of_book(self):
+        qty = size_qty(Sizing("equity", 1.0), equity=20_000, price=100, initial_risk=10, realized_vol=0.3)
+        self.assertAlmostEqual(qty, 200.0)
+
+    def test_voltarget_scales_inversely_with_vol_and_caps_at_1x(self):
+        calm = size_qty(Sizing("voltarget", 0.20), equity=20_000, price=100, initial_risk=10, realized_vol=0.40)
+        wild = size_qty(Sizing("voltarget", 0.20), equity=20_000, price=100, initial_risk=10, realized_vol=0.80)
+        self.assertAlmostEqual(calm, 100.0)
+        self.assertAlmostEqual(wild, 50.0)
+        capped = size_qty(Sizing("voltarget", 0.20), equity=20_000, price=100, initial_risk=10, realized_vol=0.05)
+        self.assertAlmostEqual(capped, 200.0)  # would be 4x levered; capped to fully invested
