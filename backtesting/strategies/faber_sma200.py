@@ -1,11 +1,21 @@
-"""Faber (2007) moving-average timing model, daily 200-SMA version.
+"""Faber (2007) moving-average timing model.
 
-Published rule: long while price is above its long-term SMA, cash otherwise. The
-paper uses a 10-month SMA on monthly closes; the daily 200-SMA is the equivalent
-Faber cites as the starting point. No stop, fully invested, price-only.
+Published rule: at each MONTH END, long if price is above its 10-month SMA, cash
+otherwise. No stop, fully invested, price-only. The monthly sampling is not an
+incidental detail of the paper — it is what keeps the rule from whipsawing.
 
-This is the literature's canonical Sharpe improver: same-ish return as buy-and-hold
-with materially lower volatility and drawdown.
+Two variants are registered:
+
+  FaberSma200        the published rule, checked monthly (200 trading days ~ 10 months)
+  FaberSma200Daily   the same threshold checked every bar
+
+The daily variant is kept because the gap between them is the whole lesson. Over
+2001-2026 on JPM the daily check round-trips 118 times and posts a 74% drawdown —
+worse than buy-and-hold — while the monthly check trades a fraction as often.
+Sampling frequency, not the moving-average length, is what makes this system work.
+
+Checked on the first bar of each month using data through that close and filled the
+next open, so no calendar lookahead.
 """
 from __future__ import annotations
 
@@ -20,6 +30,7 @@ class FaberSma200:
     name = "faber_sma200"
     sizing = Sizing(mode="equity", value=1.0)
     uses_trail = False
+    monthly = True
 
     def __init__(self, bars: list[Bar]):
         self.risk = SharedRisk()
@@ -30,16 +41,22 @@ class FaberSma200:
         self.sma200 = ta.sma(c, 200)
         self.atr = ta.atr(h, l, c, self.risk.atr_len)
         self.vol = ta.realized_vol(c, 60)
-        self._above = ta.crossover(c, self.sma200)
-        self._below = ta.crossunder(c, self.sma200)
+        self.month_start = np.zeros(len(bars), dtype=bool)
+        for i in range(1, len(bars)):
+            self.month_start[i] = bars[i].t[:7] != bars[i - 1].t[:7]
+
+    def _rebalance_bar(self, i: int) -> bool:
+        return bool(self.month_start[i]) if self.monthly else True
 
     def long_signal(self, i: int) -> bool:
-        if np.isnan(self.sma200[i]):
+        if np.isnan(self.sma200[i]) or not self._rebalance_bar(i):
             return False
-        return bool(self._above[i])
+        return bool(self.close[i] > self.sma200[i])
 
     def should_flatten(self, i: int) -> bool:
-        return bool(self._below[i])
+        if np.isnan(self.sma200[i]) or not self._rebalance_bar(i):
+            return False
+        return bool(self.close[i] < self.sma200[i])
 
     def initial_risk(self, i: int) -> float:
         atr = self.atr[i]
@@ -53,3 +70,8 @@ class FaberSma200:
 
     def trail_candidate(self, i: int, entry_px: float, initial_risk: float) -> float:
         return float("-inf")
+
+
+class FaberSma200Daily(FaberSma200):
+    name = "faber_sma200_daily"
+    monthly = False

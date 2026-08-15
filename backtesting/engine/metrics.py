@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from datetime import date
 
+from backtesting.engine.indicators import periods_per_year
 from backtesting.engine.types import EquityPoint, RunResult, Trade
 
 _PERIODS = 252
@@ -31,7 +32,7 @@ def cagr(eq: list[EquityPoint]) -> float:
     return (eq[-1].equity / eq[0].equity) ** (1.0 / years) - 1.0
 
 
-def sharpe(returns: list[float], rf: float = _RF) -> float:
+def sharpe(returns: list[float], rf: float = _RF, periods: int = _PERIODS) -> float:
     n = len(returns)
     if n < 2:
         return 0.0
@@ -40,28 +41,34 @@ def sharpe(returns: list[float], rf: float = _RF) -> float:
     std = math.sqrt(var)
     if std == 0:
         return 0.0
-    return ((mean - rf / _PERIODS) / std) * math.sqrt(_PERIODS)
+    return ((mean - rf / periods) / std) * math.sqrt(periods)
 
 
-def sortino(returns: list[float], mar: float = _RF) -> float:
+def sortino(returns: list[float], mar: float = _RF, periods: int = _PERIODS) -> float:
     n = len(returns)
     if n < 2:
         return 0.0
     mean = sum(returns) / n
-    mar_d = mar / _PERIODS
+    mar_d = mar / periods
     downside = [(r - mar_d) ** 2 for r in returns if r < mar_d]
     if not downside:
         return float("inf") if mean > mar_d else 0.0
     dd = math.sqrt(sum(downside) / n)
     if dd == 0:
         return 0.0
-    return ((mean - mar_d) / dd) * math.sqrt(_PERIODS)
+    return ((mean - mar_d) / dd) * math.sqrt(periods)
 
 
 def buy_hold(bars, start: str | None, initial_cash: float = 20_000.0,
-             commission_bps: float = 10.0, slippage_bps: float = 5.0) -> dict:
-    """Benchmark: buy the first live open, hold to the end. Same costs as the engine."""
-    live = [b for b in bars if start is None or b.t[:10] >= start[:10]]
+             commission_bps: float = 10.0, slippage_bps: float = 5.0,
+             warmup_bars: int = 0) -> dict:
+    """Benchmark: buy the first live open, hold to the end. Same costs as the engine.
+
+    `warmup_bars` must match what the strategies were given, or the benchmark gets a
+    head start on symbols whose history begins after the requested start date.
+    """
+    live = [b for i, b in enumerate(bars)
+            if (start is None or b.t[:10] >= start[:10]) and i >= warmup_bars]
     if len(live) < 2:
         return {"cagr": 0.0, "sharpe": 0.0, "sortino": None, "max_dd": 0.0, "return_pct": 0.0}
     entry_px = live[0].o * (1.0 + slippage_bps / 10_000.0)
@@ -72,9 +79,10 @@ def buy_hold(bars, start: str | None, initial_cash: float = 20_000.0,
         e = qty * b.c
         peak = max(peak, e)
         eq.append(EquityPoint(t=b.t, equity=e, drawdown=(peak - e) / peak if peak else 0.0))
+    per = periods_per_year([p.t for p in eq])
     rets = _daily_returns(eq)
-    sh = sharpe(rets)
-    so = sortino(rets)
+    sh = sharpe(rets, periods=per)
+    so = sortino(rets, periods=per)
     return {
         "cagr": cagr(eq),
         "sharpe": None if not math.isfinite(sh) else sh,
@@ -100,11 +108,13 @@ def summarize(result: RunResult) -> dict:
     reasons: dict[str, int] = {}
     for t in trades:
         reasons[t.reason] = reasons.get(t.reason, 0) + 1
+    per = periods_per_year([p.t for p in eq])
     rets = _daily_returns(eq)
-    sh = sharpe(rets)
-    so = sortino(rets)
+    sh = sharpe(rets, periods=per)
+    so = sortino(rets, periods=per)
     return {
         "symbol": result.symbol,
+        "periods_per_year": per,
         "source": result.source,
         "n": n,
         "wins": len(wins),

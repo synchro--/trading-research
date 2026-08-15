@@ -196,6 +196,60 @@ Sample caveat: 7 correlated US tech-heavy names, ~5 years, one bear market. Medi
 Sharpe gaps under ~0.2 are not distinguishable from noise here. Do not promote a
 system into v2 on this evidence alone.
 
+*(Figures above refreshed after the Faber monthly fix and the shared 252-bar warmup;
+see §6c. The tech-book conclusions did not change, the levels moved slightly.)*
+
+---
+
+## 6c. Out-of-sample: uncorrelated book, 2001-2026
+
+Book: JPM (bank), LMT (defense), AMGN (biotech), PFE (pharma), MCD (consumer
+discretionary), BRK-B, EEM (emerging markets), BTC-USD. Mean pairwise daily-return
+correlation **0.33** (tech book was ~0.7-0.9). Yahoo **total-return** bars — Yahoo's
+raw OHLC is split- but not dividend-adjusted, which alone made PFE show a negative
+26-year return. Reproduce with `python -m backtesting.compare --book diverse`.
+
+| System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
+|---|---|---|---|---|
+| Buy & hold | **0.52** | 10.4% | 65.0% | — |
+| TSMOM 12-month | 0.43 | 5.8% | 46.2% | 1/8 |
+| Faber SMA200 (monthly) | 0.38 | 5.5% | 55.5% | 2/8 |
+| Faber SMA200 (daily) | 0.32 | 3.9% | 54.0% | 1/8 |
+| **EMA Pullback v1** | 0.27 | 0.8% | **9.4%** | 0/8 |
+| Naked EMA50 reclaim | 0.27 | 0.8% | 9.4% | 0/8 |
+| Donchian 55/20 | 0.24 | 1.1% | 15.6% | 1/8 |
+| RSI trend dip | 0.19 | 0.4% | 9.1% | 0/8 |
+| Connors RSI(2) + trail | 0.18 | 1.4% | 40.8% | 1/8 |
+| Connors RSI(2) | 0.12 | 0.6% | 30.7% | 0/8 |
+
+What changed versus §6b:
+
+1. **Faber was mis-implemented.** The 2007 paper samples the moving average
+   *monthly*; the first pass checked it daily. Over 2001-2026 the daily version
+   round-trips JPM 118 times for a 74% drawdown — worse than buy-and-hold. Both are
+   registered (`faber_sma200`, `faber_sma200_daily`) because the gap is the lesson:
+   sampling frequency dominated any parameter choice here.
+2. **Faber's win did not generalize.** It beat buy-and-hold on the tech book and
+   loses to it on this one. §6b's headline should be read as sample-specific.
+3. **Connors RSI(2) was a regime artifact** — 0.42 on the tech book, 0.12 here,
+   negative on AMGN and PFE. Stopless mean reversion gets run over across 25 years.
+   It still had the best 2007-2009 crisis showing (+1.7% CAGR, 6.6% DD vs
+   buy-and-hold's -3.4% / 53.0%), so the entry is real and the missing stop is fatal.
+4. **The RSI gate is inert — confirmed twice.** Naked EMA50 reclaim matches full v1
+   on median Sharpe, CAGR and drawdown on both books, differing on 3 of 15 symbols.
+   Two independent samples agree. Delete it.
+5. **v1's risk model generalized; its entry did not.** Median drawdown 9.4% here vs
+   5.5% on tech, on assets it had never seen including BTC (6.8% vs 83.4%
+   buy-and-hold). Entry Sharpe decayed 0.46 → 0.27 like everything else.
+
+Spearman rank correlation of median Sharpe between the two books is **0.71** — the
+broad ordering survives, the levels do not.
+
+Open item: every result here is a *single-asset* application of rules Faber and MOP
+designed for diversified portfolios. The paper's ~10% drawdown comes from five
+uncorrelated sleeves each carrying the timing rule. A portfolio-level test of this
+book is the missing experiment, and is the most likely place a real edge shows up.
+
 ---
 
 ## 7. Engine 0.1 contract

@@ -28,6 +28,11 @@ SYMBOL_ALIASES = {
     "URTH": "URTH",
     "MSCI": "URTH",
     "MSCIWORLD": "URTH",
+    "BTC": "BTC-USD",
+    "BITCOIN": "BTC-USD",
+    "BRK": "BRK-B",
+    "BRKB": "BRK-B",
+    "BERKSHIRE": "BRK-B",
 }
 
 

@@ -57,9 +57,19 @@ Walk-forward, parameter grids, paper orders, shorts, minute bars, weekly/OBV/Kel
 - [x] Faber SMA200, Connors RSI(2), TSMOM 12-month, Connors + ATR trail.
 - [x] Regime split (2022 bear vs 2023-2026) and a warmup-safe start date.
 
+## Out-of-sample pass (done — see DESIGN §6c)
+
+- [x] Deep history: Yahoo provider back to 2000, total-return adjusted (`--provider yahoo`). Alpaca IEX only reaches mid-2020.
+- [x] Uncorrelated book: JPM, LMT, AMGN, PFE, MCD, BRK-B, EEM, BTC-USD (`--book diverse`). Mean pairwise correlation 0.33.
+- [x] Shared `warmup_bars` for strategies *and* the benchmark, so symbols with different inception dates start together.
+- [x] Crypto calendar: annualize on 365 days when the bars say the asset trades daily.
+- [x] Fix Faber to the published monthly sampling; keep the daily variant for contrast.
+- [x] GFC 2007-2009 sub-period.
+
 ## Next
 
-- [ ] Fix the warmup hole properly: the loop should refuse to trade until every indicator a strategy uses is non-NaN, instead of relying on the caller to pick a safe `--start`.
-- [ ] Decide on the RSI gate in v1 — the data says it filters nothing. Delete it or justify it from a trade log.
-- [ ] Longer and wider sample before promoting anything: pre-2020 history (needs a non-Alpaca source) and non-tech names, to break the correlation in the current book.
-- [ ] If chasing Faber: test a buffer band around the SMA to cut the 2022 whipsaw. That is a parameter change — needs the wider sample first, or it is curve-fitting.
+- [ ] **Portfolio-level test.** Everything so far is one asset at a time. Faber and MOP are portfolio systems — equal-weight the 8 sleeves with the timing rule on each and measure the basket. This is where the literature's numbers actually come from and the most likely place a real edge appears.
+- [ ] Delete the RSI gate from v1. Two independent samples say it filters nothing.
+- [ ] Give Connors RSI(2) a stop and re-test. Best crisis performer, worst long-run performer, and the difference is that Connors ran it stopless.
+- [ ] Make the loop derive `warmup_bars` from the strategy's own indicators instead of taking it from the caller.
+- [ ] Nothing that tunes a length until the portfolio test exists.

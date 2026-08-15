@@ -20,36 +20,59 @@ from backtesting.engine.loop import run
 from backtesting.engine.metrics import buy_hold, summarize
 from backtesting.strategies import REGISTRY
 
-BOOK = ["KLAC", "SMH", "NET", "GOOGL", "SPY", "QQQ", "URTH"]
+# The original book: correlated US tech. Alpaca IEX history, mid-2020 onward.
+TECH_BOOK = ["KLAC", "SMH", "NET", "GOOGL", "SPY", "QQQ", "URTH"]
 
-# Alpaca's IEX history starts 2020-07-27 for most of the book. Starting the live
-# window at the first bar hands buy-and-hold a free 10 months, because anything keyed
-# off a 200-day average is still NaN and stuck in cash. 2021-06-01 is the first date
-# where every strategy's slowest indicator is warm, so it is the only fair comparison.
+# Deliberately uncorrelated, one name per sector, on Yahoo total-return history so
+# the sample reaches back through 2000-02, 2008 and 2020 rather than one bull run.
+DIVERSE_BOOK = ["JPM", "LMT", "AMGN", "PFE", "MCD", "BRK-B", "EEM", "BTC-USD"]
+
+BOOKS = {"tech": TECH_BOOK, "diverse": DIVERSE_BOOK}
+
+# Slowest indicator in the registry is TSMOM's 252-bar lookback. Every strategy and
+# the benchmark start at the same bar so no one gets a head start.
+WARMUP_BARS = 252
 START, END = "2021-06-01", "2026-08-13"
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--symbols", default=",".join(BOOK))
-    p.add_argument("--start", default=START)
+    p.add_argument("--book", default="tech", choices=sorted(BOOKS), help="named symbol set")
+    p.add_argument("--symbols", default="", help="override --book with a custom list")
+    p.add_argument("--start", default="")
     p.add_argument("--end", default=END)
     p.add_argument("--cash", type=float, default=20_000.0)
+    p.add_argument("--provider", default="auto", choices=["auto", "yahoo", "alpaca"])
+    p.add_argument("--warmup", type=int, default=WARMUP_BARS)
+    p.add_argument("--force-fetch", action="store_true")
     p.add_argument("--json", default="")
     args = p.parse_args()
 
-    symbols = [_resolve(s) for s in args.symbols.split(",") if s.strip()]
-    data = {s: load_bars(s, args.start, args.end) for s in symbols}
+    raw = args.symbols.split(",") if args.symbols else BOOKS[args.book]
+    symbols = [_resolve(s) for s in raw if s.strip()]
+    start = args.start or ("2001-01-01" if args.book == "diverse" and not args.symbols else START)
+
+    data = {}
+    for s in symbols:
+        try:
+            data[s] = load_bars(s, start, args.end, provider=args.provider,
+                                warmup_calendar_days=600, force=args.force_fetch)
+        except RuntimeError as e:
+            # e.g. asking for BTC in 2008. Skip rather than abort the whole book.
+            print(f"  [skip] {s}: {e}")
+    if not data:
+        raise SystemExit("no symbols have data in this window")
+    symbols = list(data)
 
     bench = {}
     for s, (bars, _) in data.items():
-        bench[s] = buy_hold(bars, args.start, args.cash)
+        bench[s] = buy_hold(bars, start, args.cash, warmup_bars=args.warmup)
 
     rows: list[dict] = []
     for name in REGISTRY:
         for s, (bars, source) in data.items():
-            res = run(bars, symbol=s, start=args.start, initial_cash=args.cash,
-                      strategy=name, source=source)
+            res = run(bars, symbol=s, start=start, initial_cash=args.cash,
+                      strategy=name, source=source, warmup_bars=args.warmup)
             m = summarize(res)
             m["strategy"] = name
             m["bh_sharpe"] = bench[s]["sharpe"] or 0.0
@@ -58,6 +81,10 @@ def main() -> None:
             m["sharpe_vs_bh"] = (m["sharpe"] or 0.0) - m["bh_sharpe"]
             rows.append(m)
 
+    spans = {s: (b[0].t, b[-1].t) for s, (b, _) in data.items()}
+    print(f"\nbook={args.book}  start={start}  end={args.end}  warmup={args.warmup} bars")
+    for s in symbols:
+        print(f"  {s:<9} {spans[s][0]} -> {spans[s][1]}  ({len(data[s][0])} bars, {data[s][1]})")
     print(f"\n{'strategy':<18}{'medSharpe':>10}{'medCAGR':>9}{'medDD':>8}"
           f"{'beatBH':>8}{'medΔSh':>8}{'trades':>8}{'time%':>7}")
     print("-" * 74)
@@ -91,7 +118,8 @@ def main() -> None:
 
     if args.json:
         payload = {"benchmark": bench, "rows": rows, "table": table,
-                   "start": args.start, "end": args.end}
+                   "start": start, "end": args.end, "book": args.book,
+                   "symbols": symbols, "warmup_bars": args.warmup}
         with open(args.json, "w") as f:
             json.dump(payload, f, indent=2, default=str)
         print(f"\nwrote {args.json}")

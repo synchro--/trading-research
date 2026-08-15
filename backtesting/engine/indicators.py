@@ -65,6 +65,23 @@ def rsi(close: np.ndarray, length: int = 14) -> np.ndarray:
     return out
 
 
+def periods_per_year(dates: list[str]) -> int:
+    """252 for exchange-traded names, 365 for instruments that trade every day.
+
+    Crypto has no weekends, so annualizing its daily stats with 252 overstates
+    return and understates volatility. Infer the calendar from the bars instead.
+    """
+    if len(dates) < 30:
+        return 252
+    from datetime import date
+
+    span = (date.fromisoformat(dates[-1][:10]) - date.fromisoformat(dates[0][:10])).days
+    if span <= 0:
+        return 252
+    per_year = len(dates) / (span / 365.25)
+    return 365 if per_year > 300 else 252
+
+
 def sma(src: np.ndarray, length: int) -> np.ndarray:
     out = np.full(len(src), np.nan, dtype=float)
     if length <= 0 or len(src) < length:

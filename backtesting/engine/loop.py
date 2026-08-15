@@ -18,7 +18,12 @@ def run(
     strategy: str = "ema_pullback",
     source: str = "",
     strat=None,
+    warmup_bars: int = 0,
 ) -> RunResult:
+    """warmup_bars: refuse to trade before this bar index, so slow indicators are
+    warm. Symbols in a book start on different dates; without this, an SMA200 rule
+    sits in NaN-cash while buy-and-hold is already long and the comparison is rigged.
+    """
     if not bars:
         return RunResult(symbol=symbol, trades=[], equity=[], fills=[], open_position=None, source=source)
 
@@ -37,7 +42,7 @@ def run(
 
     for i, bar in enumerate(bars):
         broker.mark_bar(i)
-        live = start is None or bar.t[:10] >= start[:10]
+        live = (start is None or bar.t[:10] >= start[:10]) and i >= warmup_bars
 
         if live and pending_flatten and broker.position is not None:
             broker.sell(bar.t, bar.o, "regime")

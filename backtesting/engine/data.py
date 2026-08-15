@@ -13,8 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "backtesting" / "data"
 
 
-def _cache_path(symbol: str) -> Path:
-    return DATA_DIR / f"{symbol.upper()}_1d.csv"
+def _cache_path(symbol: str, provider: str = "") -> Path:
+    suffix = f"_{provider}" if provider else ""
+    return DATA_DIR / f"{symbol.upper().replace('-', '')}_1d{suffix}.csv"
 
 
 def write_csv(bars: list[Bar], path: Path) -> None:
@@ -136,13 +137,28 @@ def fetch_yahoo(symbol: str, start: str, end: str) -> list[Bar]:
     result = payload["chart"]["result"][0]
     ts = result["timestamp"]
     q = result["indicators"]["quote"][0]
+    # Yahoo's quote OHLC is split-adjusted but not dividend-adjusted, which makes
+    # dividend payers look far worse than they were (PFE shows a negative 26-year
+    # return on price alone). Rescale OHLC by adjclose/close to get a total-return
+    # series, so buy-and-hold is not penalised against strategies that sit in cash.
+    adj = None
+    try:
+        adj = result["indicators"]["adjclose"][0]["adjclose"]
+    except (KeyError, IndexError, TypeError):
+        adj = None
     bars: list[Bar] = []
     for i, t in enumerate(ts):
         o, h, l, c = q["open"][i], q["high"][i], q["low"][i], q["close"][i]
-        if o is None or h is None or l is None or c is None:
+        if o is None or h is None or l is None or c is None or c == 0:
             continue
+        k = 1.0
+        if adj is not None and i < len(adj) and adj[i] is not None:
+            k = float(adj[i]) / float(c)
         day = datetime.fromtimestamp(t, tz=timezone.utc).date().isoformat()
-        bars.append(Bar(t=day, o=float(o), h=float(h), l=float(l), c=float(c), v=float(q["volume"][i] or 0)))
+        bars.append(
+            Bar(t=day, o=float(o) * k, h=float(h) * k, l=float(l) * k, c=float(c) * k,
+                v=float(q["volume"][i] or 0))
+        )
     bars.sort(key=lambda b: b.t)
     return bars
 
@@ -182,34 +198,42 @@ def load_bars(
     *,
     warmup_calendar_days: int = 300,
     force: bool = False,
+    provider: str = "auto",
 ) -> tuple[list[Bar], str]:
-    """Return (bars, source). Bars include warmup history before `start`."""
+    """Return (bars, source). Bars include warmup history before `start`.
+
+    provider: "auto" picks Alpaca for recent windows and Yahoo for anything
+    reaching before Alpaca's IEX history (which starts mid-2020 on this tier).
+    Pass "yahoo" or "alpaca" to force one. Caches are kept per provider so a
+    deep Yahoo series never gets mixed with a shallow Alpaca one.
+    """
     fetch_start = (datetime.fromisoformat(start) - timedelta(days=warmup_calendar_days)).date().isoformat()
-    cache = _cache_path(symbol)
-    source = "cache"
+    if provider == "auto":
+        provider = "yahoo" if fetch_start < "2020-08-01" else "alpaca"
+
+    cache = _cache_path(symbol, "" if provider == "alpaca" else provider)
     if force or not cache.exists():
         bars: list[Bar] = []
         errors: list[str] = []
-        if _has_alpaca_keys():
+        order = ["alpaca", "yahoo", "stooq"] if provider == "alpaca" else ["yahoo", "stooq", "alpaca"]
+        for prov in order:
+            if bars:
+                break
             try:
-                bars, feed = fetch_alpaca(symbol, fetch_start, end)
-                source = f"alpaca:{feed}"
+                if prov == "alpaca":
+                    if not _has_alpaca_keys():
+                        errors.append("alpaca: no ALPACA_API_KEY_ID/SECRET in env")
+                        continue
+                    bars, feed = fetch_alpaca(symbol, fetch_start, end)
+                    source = f"alpaca:{feed}"
+                elif prov == "yahoo":
+                    bars = fetch_yahoo(symbol, fetch_start, end)
+                    source = "yahoo"
+                else:
+                    bars = fetch_stooq(symbol)
+                    source = "stooq"
             except Exception as e:
-                errors.append(f"alpaca: {e}")
-        else:
-            errors.append("alpaca: no ALPACA_API_KEY_ID/SECRET in env")
-        if not bars:
-            try:
-                bars = fetch_yahoo(symbol, fetch_start, end)
-                source = "yahoo"
-            except Exception as e:
-                errors.append(f"yahoo: {e}")
-        if not bars:
-            try:
-                bars = fetch_stooq(symbol)
-                source = "stooq"
-            except Exception as e:
-                errors.append(f"stooq: {e}")
+                errors.append(f"{prov}: {e}")
         if not bars:
             raise RuntimeError(f"No bars for {symbol}: " + " | ".join(errors))
         write_csv(bars, cache)
