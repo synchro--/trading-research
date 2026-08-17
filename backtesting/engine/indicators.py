@@ -1,0 +1,142 @@
+"""Pine-compatible EMA / RMA / ATR / RSI (TradingView ta.*)."""
+from __future__ import annotations
+
+import numpy as np
+
+
+def ema(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if len(src) < length:
+        return out
+    alpha = 2.0 / (length + 1)
+    out[length - 1] = float(np.mean(src[:length]))
+    for i in range(length, len(src)):
+        out[i] = alpha * src[i] + (1.0 - alpha) * out[i - 1]
+    return out
+
+
+def rma(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    start = 0
+    while start < len(src) and np.isnan(src[start]):
+        start += 1
+    if start + length > len(src):
+        return out
+    alpha = 1.0 / length
+    out[start + length - 1] = float(np.mean(src[start:start + length]))
+    for i in range(start + length, len(src)):
+        out[i] = alpha * src[i] + (1.0 - alpha) * out[i - 1]
+    return out
+
+
+def true_range(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    tr = np.empty(len(close), dtype=float)
+    tr[0] = high[0] - low[0]
+    prev = close[:-1]
+    tr[1:] = np.maximum(
+        high[1:] - low[1:],
+        np.maximum(np.abs(high[1:] - prev), np.abs(low[1:] - prev)),
+    )
+    return tr
+
+
+def atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, length: int = 14) -> np.ndarray:
+    return rma(true_range(high, low, close), length)
+
+
+def rsi(close: np.ndarray, length: int = 14) -> np.ndarray:
+    delta = np.diff(close, prepend=close[0])
+    delta[0] = np.nan
+    gain = np.where(np.isnan(delta), np.nan, np.clip(delta, 0.0, None))
+    loss = np.where(np.isnan(delta), np.nan, np.clip(-delta, 0.0, None))
+    avg_gain = rma(gain, length)
+    avg_loss = rma(loss, length)
+    out = np.full(len(close), np.nan, dtype=float)
+    for i in range(len(close)):
+        g, l = avg_gain[i], avg_loss[i]
+        if np.isnan(g) or np.isnan(l):
+            continue
+        if l == 0 and g == 0:
+            out[i] = 50.0
+        elif l == 0:
+            out[i] = 100.0
+        else:
+            out[i] = 100.0 - 100.0 / (1.0 + g / l)
+    return out
+
+
+def periods_per_year(dates: list[str]) -> int:
+    """252 for exchange-traded names, 365 for instruments that trade every day.
+
+    Crypto has no weekends, so annualizing its daily stats with 252 overstates
+    return and understates volatility. Infer the calendar from the bars instead.
+    """
+    if len(dates) < 30:
+        return 252
+    from datetime import date
+
+    span = (date.fromisoformat(dates[-1][:10]) - date.fromisoformat(dates[0][:10])).days
+    if span <= 0:
+        return 252
+    per_year = len(dates) / (span / 365.25)
+    return 365 if per_year > 300 else 252
+
+
+def sma(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    csum = np.cumsum(np.insert(src, 0, 0.0))
+    out[length - 1 :] = (csum[length:] - csum[:-length]) / length
+    return out
+
+
+def realized_vol(close: np.ndarray, length: int = 60, periods: int = 252) -> np.ndarray:
+    """Annualized stdev of daily simple returns over a trailing window."""
+    out = np.full(len(close), np.nan, dtype=float)
+    rets = np.full(len(close), np.nan, dtype=float)
+    rets[1:] = close[1:] / close[:-1] - 1.0
+    for i in range(length, len(close)):
+        w = rets[i - length + 1 : i + 1]
+        if np.any(np.isnan(w)):
+            continue
+        out[i] = float(np.std(w, ddof=1) * np.sqrt(periods))
+    return out
+
+
+def pct_change_n(close: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(close), np.nan, dtype=float)
+    if len(close) <= length:
+        return out
+    out[length:] = close[length:] / close[:-length] - 1.0
+    return out
+
+
+def rolling_max(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    for i in range(length - 1, len(src)):
+        out[i] = float(np.max(src[i - length + 1 : i + 1]))
+    return out
+
+
+def rolling_min(src: np.ndarray, length: int) -> np.ndarray:
+    out = np.full(len(src), np.nan, dtype=float)
+    if length <= 0 or len(src) < length:
+        return out
+    for i in range(length - 1, len(src)):
+        out[i] = float(np.min(src[i - length + 1 : i + 1]))
+    return out
+
+
+def crossover(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    out = np.zeros(len(a), dtype=bool)
+    out[1:] = (a[1:] > b[1:]) & (a[:-1] <= b[:-1])
+    return out
+
+
+def crossunder(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    out = np.zeros(len(a), dtype=bool)
+    out[1:] = (a[1:] < b[1:]) & (a[:-1] >= b[:-1])
+    return out

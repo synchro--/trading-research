@@ -156,6 +156,102 @@ Do not add these in engine 0.1.
 
 ---
 
+## 6b. Measured baseline (2026-08, engine 0.1)
+
+Book: KLAC, SMH, NET, GOOGL, SPY, QQQ, URTH. Live window **2021-06-01 → 2026-08-13**
+(the first date every 200-period indicator is warm — starting earlier silently gifts
+buy-and-hold the months when SMA200-based rules are still NaN and stuck in cash).
+Reproduce with `python -m backtesting.compare`.
+
+| System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
+|---|---|---|---|---|
+| Buy & hold | 0.79 | 22.8% | 43.5% | — |
+| Faber SMA200 | **0.85** | 15.0% | **22.1%** | 4/7 |
+| TSMOM 12-month | 0.71 | 10.0% | 23.5% | 2/7 |
+| Connors RSI(2) | 0.50 | 3.3% | 9.6% | 1/7 |
+| Connors RSI(2) + ATR trail | 0.48 | 6.5% | 17.1% | 2/7 |
+| **EMA Pullback v1** | 0.44 | 1.1% | 5.5% | 0/7 |
+| Naked EMA50 reclaim | 0.44 | 1.1% | 5.5% | 0/7 |
+| Donchian 55/20 | 0.16 | 1.0% | 9.1% | 0/7 |
+| RSI trend dip | -0.00 | -0.0% | 5.8% | 0/7 |
+
+Findings that change the v2 priorities:
+
+1. **v1's RSI gate is inert.** Naked EMA50 reclaim scores identically on every
+   symbol except GOOGL. Item 2 above (retune the RSI band) should become *delete
+   the RSI band* unless a trade log shows it filtering something.
+2. **v1's 1.1% CAGR is a sizing artifact.** 1.5% risk over a 3.5-ATR stop deploys
+   ~15-20% of equity and the rules are in the market ~33% of the time, so the book
+   is ~94% cash. A 20% vol target leaves Sharpe flat (0.44 → 0.46) and triples CAGR
+   (1.1% → 3.9%). Sharpe is scale-invariant, CAGR is not — never compare systems on
+   CAGR when their sizing differs.
+3. **The frozen risk model is the good part.** v1 has by far the lowest drawdown of
+   anything tested (5.5% median vs 43.5% buy-and-hold) and lost 1.8% in 2022 while
+   buy-and-hold gave back 40.9%. The entry signal is the weak half, not the exit.
+4. **Faber's 200-day rule is the benchmark to beat**, not v1. It is simpler than v1,
+   beats it on Sharpe and by 14 points of CAGR, and halves buy-and-hold's drawdown.
+   Its weakness is whipsaw: 35 round trips in 2022 for -8.6%.
+
+Sample caveat: 7 correlated US tech-heavy names, ~5 years, one bear market. Median
+Sharpe gaps under ~0.2 are not distinguishable from noise here. Do not promote a
+system into v2 on this evidence alone.
+
+*(Figures above refreshed after the Faber monthly fix and the shared 252-bar warmup;
+see §6c. The tech-book conclusions did not change, the levels moved slightly.)*
+
+---
+
+## 6c. Out-of-sample: uncorrelated book, 2001-2026
+
+Book: JPM (bank), LMT (defense), AMGN (biotech), PFE (pharma), MCD (consumer
+discretionary), BRK-B, EEM (emerging markets), BTC-USD. Mean pairwise daily-return
+correlation **0.33** (tech book was ~0.7-0.9). Yahoo **total-return** bars — Yahoo's
+raw OHLC is split- but not dividend-adjusted, which alone made PFE show a negative
+26-year return. Reproduce with `python -m backtesting.compare --book diverse`.
+
+| System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
+|---|---|---|---|---|
+| Buy & hold | **0.52** | 10.4% | 65.0% | — |
+| TSMOM 12-month | 0.43 | 5.8% | 46.2% | 1/8 |
+| Faber SMA200 (monthly) | 0.38 | 5.5% | 55.5% | 2/8 |
+| Faber SMA200 (daily) | 0.32 | 3.9% | 54.0% | 1/8 |
+| **EMA Pullback v1** | 0.27 | 0.8% | **9.4%** | 0/8 |
+| Naked EMA50 reclaim | 0.27 | 0.8% | 9.4% | 0/8 |
+| Donchian 55/20 | 0.24 | 1.1% | 15.6% | 1/8 |
+| RSI trend dip | 0.19 | 0.4% | 9.1% | 0/8 |
+| Connors RSI(2) + trail | 0.18 | 1.4% | 40.8% | 1/8 |
+| Connors RSI(2) | 0.12 | 0.6% | 30.7% | 0/8 |
+
+What changed versus §6b:
+
+1. **Faber was mis-implemented.** The 2007 paper samples the moving average
+   *monthly*; the first pass checked it daily. Over 2001-2026 the daily version
+   round-trips JPM 118 times for a 74% drawdown — worse than buy-and-hold. Both are
+   registered (`faber_sma200`, `faber_sma200_daily`) because the gap is the lesson:
+   sampling frequency dominated any parameter choice here.
+2. **Faber's win did not generalize.** It beat buy-and-hold on the tech book and
+   loses to it on this one. §6b's headline should be read as sample-specific.
+3. **Connors RSI(2) was a regime artifact** — 0.42 on the tech book, 0.12 here,
+   negative on AMGN and PFE. Stopless mean reversion gets run over across 25 years.
+   It still had the best 2007-2009 crisis showing (+1.7% CAGR, 6.6% DD vs
+   buy-and-hold's -3.4% / 53.0%), so the entry is real and the missing stop is fatal.
+4. **The RSI gate is inert — confirmed twice.** Naked EMA50 reclaim matches full v1
+   on median Sharpe, CAGR and drawdown on both books, differing on 3 of 15 symbols.
+   Two independent samples agree. Delete it.
+5. **v1's risk model generalized; its entry did not.** Median drawdown 9.4% here vs
+   5.5% on tech, on assets it had never seen including BTC (6.8% vs 83.4%
+   buy-and-hold). Entry Sharpe decayed 0.46 → 0.27 like everything else.
+
+Spearman rank correlation of median Sharpe between the two books is **0.71** — the
+broad ordering survives, the levels do not.
+
+Open item: every result here is a *single-asset* application of rules Faber and MOP
+designed for diversified portfolios. The paper's ~10% drawdown comes from five
+uncorrelated sleeves each carrying the timing rule. A portfolio-level test of this
+book is the missing experiment, and is the most likely place a real edge shows up.
+
+---
+
 ## 7. Engine 0.1 contract
 
 Spec only in this pass. Implementation is a later, cheaper-model job. Follow this contract; do not “improve” it.
@@ -228,3 +324,23 @@ backtesting/
 - RSI swept oversold (`lowest RSI` over the RSI length ≤ threshold, default 35) **and** RSI crosses back above 30, **or** close crosses back above the 200 SMA.
 
 Invalidation for this overlay is “new lows / failed reclaim of the 200,” not a trailing stop. A lump-sum allocator must not be shaken out by a 2 ATR wick.
+
+### Cross-ETF validation (2026-08)
+
+The overlay was tested unchanged against five alternative weekly entry rules on
+29 ETFs. Broad indexes were the development cohort; 18 sectors, themes, bonds,
+gold, and commodities were held out for validation. See
+[`research/portfolio_and_bottoms.md`](../research/portfolio_and_bottoms.md) and
+reproduce with `python -m backtesting.bottom_finder`.
+
+Keep the current rule. Across 200 signals it had:
+
+- 72.5% of entries after the surrounding ±13-week local low;
+- -4.8% median 13-week adverse excursion;
+- 14.9% median one-year total return and 78.9% positive outcomes;
+- +6.1% median one-year return over an ordinary eligible week in the same ETF;
+- similar uplift on broad (+5.6%) and held-out (+6.7%) ETFs.
+
+The first cross into a 20% drawdown bought closer to the exact low but entered
+before the low 60% of the time and had negative excess return before 2013. Do not
+replace confirmation with raw drawdown entry.
