@@ -324,3 +324,23 @@ backtesting/
 - RSI swept oversold (`lowest RSI` over the RSI length ≤ threshold, default 35) **and** RSI crosses back above 30, **or** close crosses back above the 200 SMA.
 
 Invalidation for this overlay is “new lows / failed reclaim of the 200,” not a trailing stop. A lump-sum allocator must not be shaken out by a 2 ATR wick.
+
+### Cross-ETF validation (2026-08)
+
+The overlay was tested unchanged against five alternative weekly entry rules on
+29 ETFs. Broad indexes were the development cohort; 18 sectors, themes, bonds,
+gold, and commodities were held out for validation. See
+[`research/portfolio_and_bottoms.md`](../research/portfolio_and_bottoms.md) and
+reproduce with `python -m backtesting.bottom_finder`.
+
+Keep the current rule. Across 200 signals it had:
+
+- 72.5% of entries after the surrounding ±13-week local low;
+- -4.8% median 13-week adverse excursion;
+- 14.9% median one-year total return and 78.9% positive outcomes;
+- +6.1% median one-year return over an ordinary eligible week in the same ETF;
+- similar uplift on broad (+5.6%) and held-out (+6.7%) ETFs.
+
+The first cross into a 20% drawdown bought closer to the exact low but entered
+before the low 60% of the time and had negative excess return before 2013. Do not
+replace confirmation with raw drawdown entry.

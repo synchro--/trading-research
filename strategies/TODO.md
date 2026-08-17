@@ -68,8 +68,10 @@ Walk-forward, parameter grids, paper orders, shorts, minute bars, weekly/OBV/Kel
 
 ## Next
 
-- [ ] **Portfolio-level test.** Everything so far is one asset at a time. Faber and MOP are portfolio systems — equal-weight the 8 sleeves with the timing rule on each and measure the basket. This is where the literature's numbers actually come from and the most likely place a real edge appears.
+- [x] **Portfolio-level test.** Global 6, oil/transport 8, and Faber 5 under static EW, Faber, TSMOM, and dual confirmation. Global 6 + dual confirmation won on risk-adjusted results (Sharpe 0.69, max DD 9.7%). See `research/portfolio_and_bottoms.md`.
+- [x] ETF Bottom Finder validation across 29 ETFs and six fixed weekly rules. Keep the current Pine logic.
+- [ ] Oil/transport event study. First acquire timestamped Trump/Iran/geopolitical text; no such documents or dataset currently exist in this repository. Do not reconstruct events from memory.
 - [ ] Delete the RSI gate from v1. Two independent samples say it filters nothing.
 - [ ] Give Connors RSI(2) a stop and re-test. Best crisis performer, worst long-run performer, and the difference is that Connors ran it stopless.
 - [ ] Make the loop derive `warmup_bars` from the strategy's own indicators instead of taking it from the caller.
-- [ ] Nothing that tunes a length until the portfolio test exists.
+- [ ] Nothing that tunes a length until the oil event dataset and a walk-forward protocol exist.

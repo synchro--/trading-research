@@ -9,8 +9,9 @@ This repo hosts trading strategies for TradingView (Pine Script v6) and notes fo
   - `ema_gc_adaptive.pine` — v1 swing strategy (mirrors DESIGN.md)
   - `etf_bottom_finder.pine` — chart overlay only; not an engine strategy
   - `templates/strategy_template.pine` — starter template (Pine v6)
-- `backtesting/` — Alpaca fetch stub; engine 0.1 is specified in DESIGN.md §7, not built yet
-- `research/` — raw ideas, links, and experiments
+- `backtesting/` — daily single-symbol engine plus portfolio and ETF-entry experiments
+- `research/` — raw ideas, links, and experiment reports
+  - `portfolio_and_bottoms.md` — equal-weight basket and 29-ETF lump-sum results
 
 ## Quick start (TradingView)
 1. Open TradingView → Pine Editor.
@@ -25,6 +26,18 @@ This repo hosts trading strategies for TradingView (Pine Script v6) and notes fo
 ## API backtesting/integration
 - See `backtesting/provider-notes.md` for integration placeholders (REST, credentials, data layout).
 - This repo does not include provider SDKs or secrets. Put API keys in environment variables or a local `.env` ignored by git.
+
+## Reproduce research
+```bash
+python -m backtesting.compare --book diverse
+python -m backtesting.portfolio
+python -m backtesting.bottom_finder
+python -m unittest discover -s backtesting/tests -v
+```
+
+Deep-history experiments use Yahoo total-return bars; recent single-stock runs can
+use Alpaca IEX. Generated data and JSON results live under gitignored
+`backtesting/data/`.
 
 ## Conventions
 - Pine version: v6 for new scripts.
