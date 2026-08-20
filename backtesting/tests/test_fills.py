@@ -103,7 +103,7 @@ class EndToEndSynthetic(unittest.TestCase):
         d0 = date(2016, 1, 1)
         bars: list[Bar] = []
         px = 100.0
-        # Strong grind so EMA50 > EMA200 after warmup, RSI not stuck at 100.
+        # Strong grind so EMA50 > EMA200 after warmup.
         for i in range(280):
             d = d0 + timedelta(days=i)
             px *= 1.002
@@ -127,7 +127,7 @@ class EndToEndSynthetic(unittest.TestCase):
         bars.append(Bar(t=d.isoformat(), o=bars[-1].c, h=bars[-1].c, l=crash, c=crash, v=1e6))
 
         result = run(bars, symbol="SYN", start="2016-10-01", initial_cash=20_000, commission_bps=0, slippage_bps=0)
-        # May be 0 or more depending on RSI band; fill model still must only use trail|regime
+        # May be 0 or more; fill model still must only use trail|regime
         for t in result.trades:
             self.assertIn(t.reason, ("trail", "regime"))
         if result.trades:
@@ -209,3 +209,28 @@ class SizingTests(unittest.TestCase):
         self.assertAlmostEqual(wild, 50.0)
         capped = size_qty(Sizing("voltarget", 0.20), equity=20_000, price=100, initial_risk=10, realized_vol=0.05)
         self.assertAlmostEqual(capped, 200.0)  # would be 4x levered; capped to fully invested
+
+
+class SteppedChandelierTests(unittest.TestCase):
+    def test_stages_hard_stop_be_then_chandelier(self):
+        from backtesting.strategies.ema_gc_adaptive import stepped_chandelier_trail
+
+        # R < 1 → no ratchet
+        cand, hh = stepped_chandelier_trail(
+            close=105, high=106, atr=2, entry_px=100, initial_risk=10, hh=106,
+            be_r=1.0, trail_r=2.0, chandelier_mult=3.0,
+        )
+        self.assertEqual(cand, float("-inf"))
+        # R = 1.5 → breakeven
+        cand, hh = stepped_chandelier_trail(
+            close=115, high=116, atr=2, entry_px=100, initial_risk=10, hh=116,
+            be_r=1.0, trail_r=2.0, chandelier_mult=3.0,
+        )
+        self.assertEqual(cand, 100.0)
+        # R = 2.5 → chandelier from HH
+        cand, hh = stepped_chandelier_trail(
+            close=125, high=130, atr=2, entry_px=100, initial_risk=10, hh=120,
+            be_r=1.0, trail_r=2.0, chandelier_mult=3.0,
+        )
+        self.assertEqual(hh, 130.0)
+        self.assertEqual(cand, 130.0 - 3.0 * 2)  # 124

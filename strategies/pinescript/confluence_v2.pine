@@ -1,0 +1,117 @@
+//@version=6
+// Confluence v2 — mirrors backtesting/strategies/confluence_v2.py.
+// Regime: EMA50>EMA200. Entries: EMA50 reclaim OR squeeze release (positive
+// momentum) above the swing-low anchored VWAP. Exit: stepped Chandelier.
+strategy("Confluence v2 Swing",
+     overlay=true,
+     initial_capital=20000,
+     currency=currency.USD,
+     default_qty_type=strategy.percent_of_equity,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.percent,
+     commission_value=0.1)
+
+grp_trend = "Trend & Regime"
+fast_len  = input.int(50, "Fast EMA", group=grp_trend)
+slow_len  = input.int(200, "Slow EMA", group=grp_trend)
+
+grp_sq = "Squeeze Trigger"
+sq_len    = input.int(20, "Squeeze Length (BB/KC)", group=grp_sq)
+sq_multKC = input.float(1.5, "KC Mult (also BB dev — LazyBear quirk)", group=grp_sq)
+pivot_len = input.int(10, "AVWAP Swing Pivot Length", group=grp_sq)
+
+grp_risk        = "Stepped Chandelier Risk"
+atr_len         = input.int(14, "ATR Length", group=grp_risk)
+atr_base_mult   = input.float(3.5, "Initial ATR Stop Mult", group=grp_risk, step=0.1)
+be_r            = input.float(1.0, "Breakeven at R", group=grp_risk, step=0.1)
+trail_r         = input.float(2.0, "Chandelier from R", group=grp_risk, step=0.1)
+chandelier_mult = input.float(3.0, "Chandelier ATR Mult", group=grp_risk, step=0.1)
+risk_per_t      = input.float(1.5, "Risk % Per Trade", group=grp_risk)
+
+// ── Regime ──────────────────────────────────────────────────────────────────
+ema50  = ta.ema(close, fast_len)
+ema200 = ta.ema(close, slow_len)
+atr    = ta.atr(atr_len)
+bull_regime  = ema50 > ema200
+regime_break = ta.crossunder(ema50, ema200)
+
+// ── Trigger A: EMA50 reclaim ───────────────────────────────────────────────
+reclaim = ta.crossover(close, ema50)
+
+// ── Trigger B: squeeze release above swing-low AVWAP ──────────────────────
+basis   = ta.sma(close, sq_len)
+dev     = sq_multKC * ta.stdev(close, sq_len)
+rangema = ta.sma(ta.tr, sq_len)
+sqzOn   = (basis - dev > basis - rangema * sq_multKC) and (basis + dev < basis + rangema * sq_multKC)
+val     = ta.linreg(close - math.avg(math.avg(ta.highest(high, sq_len), ta.lowest(low, sq_len)), ta.sma(close, sq_len)), sq_len, 0)
+released = sqzOn[1] and not sqzOn and val > 0
+
+// Swing-low anchored VWAP (re-anchors when a pivot low confirms)
+var float av_pv = na
+var float av_v  = na
+float src = hlc3
+float pl = ta.pivotlow(low, pivot_len, pivot_len)
+if not na(pl)
+    // replay from the pivot bar (pivot_len bars back) to now
+    av_pv := 0.0
+    av_v := 0.0
+    for k = pivot_len to 0
+        av_pv += hlc3[k] * volume[k]
+        av_v += volume[k]
+else if not na(av_pv)
+    av_pv += src * volume
+    av_v += volume
+float avwap_slow = not na(av_pv) and av_v > 0 ? av_pv / av_v : na
+
+bool trigger_b = released and not na(avwap_slow) and close > avwap_slow
+long_trigger = bull_regime and (reclaim or trigger_b)
+
+// ── Stepped Chandelier trail (same-bar rule respected) ─────────────────────
+var float entry_price  = na
+var float trail_price  = na
+var float initial_risk = na
+var float hh_since_entry = na
+
+if strategy.position_size > 0
+    if na(entry_price)
+        entry_price  := strategy.position_avg_price
+        initial_risk := atr * atr_base_mult
+        trail_price  := entry_price - initial_risk
+        hh_since_entry := high
+    hh_since_entry := math.max(hh_since_entry, high)
+    unrealized_r = (close - entry_price) / (initial_risk > 0 ? initial_risk : 1.0)
+    float candidate = trail_price
+    if unrealized_r >= trail_r
+        candidate := math.max(entry_price, hh_since_entry - chandelier_mult * atr)
+    else if unrealized_r >= be_r
+        candidate := entry_price
+    if regime_break
+        strategy.close("Long", comment="Regime")
+    else
+        strategy.exit("Exit", "Long", stop=trail_price, comment="Trail Hit")
+    trail_price := math.max(trail_price, candidate)
+else
+    entry_price  := na
+    trail_price  := na
+    initial_risk := na
+    hh_since_entry := na
+
+risk_usd = strategy.equity * (risk_per_t / 100)
+sl_dist  = atr * atr_base_mult
+pos_qty  = sl_dist > 0 ? risk_usd / sl_dist : 0
+
+if long_trigger and strategy.position_size == 0 and barstate.isconfirmed
+    strategy.entry("Long", strategy.long, qty=pos_qty, comment=reclaim ? "Reclaim" : "Squeeze")
+    strategy.exit("Exit", "Long", stop=close - sl_dist, comment="Trail Hit")
+
+plot(ema50, "Fast EMA", color=color.aqua, linewidth=2)
+plot(ema200, "Slow EMA", color=color.orange, linewidth=2)
+plot(avwap_slow, "Swing-Low AVWAP", color=color.new(color.lime, 40), style=plot.style_linebr)
+plot(strategy.position_size > 0 ? trail_price : na, "Stepped Trail", color=trail_price > entry_price ? color.lime : color.red, style=plot.style_linebr, linewidth=2)
+
+plotshape(bull_regime and reclaim and strategy.position_size == 0, "Reclaim Entry", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small, text="IN")
+plotshape(bull_regime and trigger_b and strategy.position_size == 0, "Squeeze Entry", style=shape.triangleup, location=location.belowbar, color=color.aqua, size=size.small, text="SQZ")
+
+alertcondition(long_trigger, "Confluence v2 LONG", "Confluence v2 entry signal")

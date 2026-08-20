@@ -1,0 +1,30 @@
+//@version=6
+// Faber (2007) 10-month SMA timing — mirrors backtesting/strategies/faber_sma200.py.
+// First bar of each month: long if close > SMA(200), flat otherwise. No trail.
+// Fully invested when long (this is an allocation overlay, not 1.5% swing risk).
+strategy("Faber SMA200 monthly",
+     overlay=true,
+     initial_capital=20000,
+     currency=currency.USD,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.percent,
+     commission_value=0.1)
+
+sma_len = input.int(200, "SMA length (~10 months)")
+sma200  = ta.sma(close, sma_len)
+new_month = month != month[1]
+
+if new_month and barstate.isconfirmed
+    if close > sma200
+        strategy.entry("Long", strategy.long)
+    else
+        strategy.close("Long", comment="Below SMA")
+
+plot(sma200, "SMA 200", color=color.orange, linewidth=2)
+bgcolor(strategy.position_size > 0 ? color.new(color.green, 92) : na)
+alertcondition(new_month and close > sma200 and strategy.position_size == 0, "Faber long", "Monthly: close above SMA200")
+alertcondition(new_month and close < sma200 and strategy.position_size > 0, "Faber cash", "Monthly: close below SMA200")

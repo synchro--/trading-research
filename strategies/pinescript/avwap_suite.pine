@@ -1,0 +1,72 @@
+//@version=6
+// Anchored VWAP Suite — institutional reference levels anchored to events.
+// Anchors: custom date, year start, quarter start, N-bar swing high, N-bar swing low.
+// ±1σ/±2σ bands from cumulative volume-weighted variance (standard AVWAP band math).
+// Mirrored (swing-low anchor) in backtesting/strategies/avwap.py.
+indicator("Anchored VWAP Suite", shorttitle="AVWAP", overlay=true)
+
+grp = "Anchors"
+show_custom  = input.bool(true, "Custom Date Anchor", group=grp)
+anchor_time  = input.time(timestamp("2024-01-01"), "Custom Anchor Date", group=grp)
+show_ytd     = input.bool(true, "Year Start Anchor", group=grp)
+show_qtd     = input.bool(false, "Quarter Start Anchor", group=grp)
+show_shigh   = input.bool(true, "Swing High Anchor", group=grp)
+show_slow    = input.bool(true, "Swing Low Anchor", group=grp)
+swing_len    = input.int(10, "Swing Pivot Length (bars each side)", minval=2, group=grp)
+
+grp_b = "Bands"
+show_bands = input.bool(true, "Show ±1σ/±2σ Bands (custom anchor)", group=grp_b)
+
+src = hlc3
+
+// ── Generic accumulator: resets when `reset` fires ──────────────────────────
+avwap_calc(bool reset, float price, float vol) =>
+    var float cum_pv = na
+    var float cum_v = na
+    var float cum_pv2 = na
+    if reset
+        cum_pv := price * vol
+        cum_v := vol
+        cum_pv2 := price * price * vol
+    else
+        cum_pv += price * vol
+        cum_v += vol
+        cum_pv2 += price * price * vol
+    float vw = cum_v > 0 ? cum_pv / cum_v : na
+    float variance = cum_v > 0 ? math.max(cum_pv2 / cum_v - vw * vw, 0.0) : na
+    [vw, math.sqrt(variance)]
+
+// ── Custom date anchor ──────────────────────────────────────────────────────
+bool custom_reset = time >= anchor_time and time[1] < anchor_time
+[vw_custom, sd_custom] = avwap_calc(custom_reset, src, volume)
+
+// ── Year / quarter anchors ──────────────────────────────────────────────────
+bool new_year = year != year[1]
+bool new_qtr  = month != month[1] and (month == 1 or month == 4 or month == 7 or month == 10)
+[vw_ytd, _sd1] = avwap_calc(new_year, src, volume)
+[vw_qtd, _sd2] = avwap_calc(new_qtr, src, volume)
+
+// ── Swing anchors: reset when a pivot confirms (swing_len bars later) ──────
+float ph = ta.pivothigh(high, swing_len, swing_len)
+float pl = ta.pivotlow(low, swing_len, swing_len)
+bool sh_reset = not na(ph)
+bool sl_reset = not na(pl)
+[vw_shigh, _sd3] = avwap_calc(sh_reset, src, volume)
+[vw_slow, _sd4]  = avwap_calc(sl_reset, src, volume)
+
+// ── Plots ───────────────────────────────────────────────────────────────────
+plot(show_custom ? vw_custom : na, "AVWAP Custom", color=color.orange, linewidth=2)
+plot(show_ytd ? vw_ytd : na, "AVWAP YTD", color=color.aqua, linewidth=1)
+plot(show_qtd ? vw_qtd : na, "AVWAP QTD", color=color.gray, linewidth=1)
+plot(show_shigh ? vw_shigh : na, "AVWAP Swing High", color=color.red, linewidth=1, style=plot.style_linebr)
+plot(show_slow ? vw_slow : na, "AVWAP Swing Low", color=color.lime, linewidth=1, style=plot.style_linebr)
+
+plot(show_bands and show_custom ? vw_custom + sd_custom : na, "+1σ", color=color.new(color.orange, 60))
+plot(show_bands and show_custom ? vw_custom - sd_custom : na, "-1σ", color=color.new(color.orange, 60))
+plot(show_bands and show_custom ? vw_custom + 2 * sd_custom : na, "+2σ", color=color.new(color.orange, 80))
+plot(show_bands and show_custom ? vw_custom - 2 * sd_custom : na, "-2σ", color=color.new(color.orange, 80))
+
+// Reclaim of the swing-low AVWAP = institutional support held (Shannon-style)
+bool reclaim_slow = ta.crossover(close, vw_slow)
+plotshape(reclaim_slow and show_slow, "Reclaim swing-low AVWAP", style=shape.circle, location=location.belowbar, color=color.lime, size=size.tiny)
+alertcondition(reclaim_slow, "AVWAP reclaim", "Close crossed above swing-low anchored VWAP")

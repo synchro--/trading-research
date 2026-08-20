@@ -1,0 +1,48 @@
+//@version=6
+// Ichimoku Cloud technical suite — standard 9/26/52 settings (Hosoda).
+// Signals per classic literature:
+//   - TK cross (tenkan over kijun) = trigger
+//   - price vs cloud = regime
+//   - chikou vs price 26 bars ago = confirmation
+// Mirrored in backtesting/strategies/ichimoku.py.
+indicator("Ichimoku Cloud Suite", shorttitle="Ichimoku", overlay=true)
+
+conversion_len = input.int(9, "Tenkan (Conversion)")
+base_len       = input.int(26, "Kijun (Base)")
+span_b_len     = input.int(52, "Senkou Span B")
+displacement   = input.int(26, "Displacement")
+
+donchian(len) => math.avg(ta.highest(len), ta.lowest(len))
+
+tenkan  = donchian(conversion_len)
+kijun   = donchian(base_len)
+span_a  = math.avg(tenkan, kijun)
+span_b  = donchian(span_b_len)
+
+// Cloud at current bar = spans computed `displacement` bars ago
+float cloud_top = math.max(span_a[displacement], span_b[displacement])
+float cloud_bot = math.min(span_a[displacement], span_b[displacement])
+
+bool above_cloud = close > cloud_top
+bool below_cloud = close < cloud_bot
+bool tk_cross_up = ta.crossover(tenkan, kijun)
+bool tk_cross_dn = ta.crossunder(tenkan, kijun)
+bool chikou_confirm = close > close[displacement]
+
+// Classic long: TK cross while above cloud with chikou confirmation
+bool ichimoku_long = tk_cross_up and above_cloud and chikou_confirm
+// Regime off: close drops below the cloud
+bool regime_off = ta.crossunder(close, cloud_bot)
+
+plot(tenkan, "Tenkan", color=color.aqua, linewidth=1)
+plot(kijun, "Kijun", color=color.maroon, linewidth=1)
+plot(close, "Chikou (displaced)", offset=-displacement, color=color.new(color.purple, 40))
+pa = plot(span_a, "Senkou A", offset=displacement - 1, color=color.new(color.green, 60))
+pb = plot(span_b, "Senkou B", offset=displacement - 1, color=color.new(color.red, 60))
+fill(pa, pb, color=span_a > span_b ? color.new(color.green, 88) : color.new(color.red, 88), title="Cloud")
+
+plotshape(ichimoku_long, "Ichimoku Long", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small)
+plotshape(regime_off, "Regime Off", style=shape.xcross, location=location.abovebar, color=color.red, size=size.tiny)
+
+alertcondition(ichimoku_long, "Ichimoku long", "TK cross above cloud with chikou confirmation")
+alertcondition(regime_off, "Ichimoku regime off", "Close crossed below the cloud")

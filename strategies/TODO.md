@@ -71,7 +71,9 @@ Walk-forward, parameter grids, paper orders, shorts, minute bars, weekly/OBV/Kel
 - [x] **Portfolio-level test.** Global 6, oil/transport 8, and Faber 5 under static EW, Faber, TSMOM, and dual confirmation. Global 6 + dual confirmation won on risk-adjusted results (Sharpe 0.69, max DD 9.7%). See `research/portfolio_and_bottoms.md`.
 - [x] ETF Bottom Finder validation across 29 ETFs and six fixed weekly rules. Keep the current Pine logic.
 - [ ] Oil/transport event study. First acquire timestamped Trump/Iran/geopolitical text; no such documents or dataset currently exist in this repository. Do not reconstruct events from memory.
-- [ ] Delete the RSI gate from v1. Two independent samples say it filters nothing.
+- [x] Delete the RSI gate from v1. Two independent samples say it filters nothing.
+- [x] Rework 3.5 ATR close-trail into stepped Chandelier (hard stop → BE @ 1R → HH−3 ATR @ 2R). Entry book med Sharpe 0.46→0.56, E[R] 0.35→0.59.
+- [x] Community Pine suite tested (supertrend, Lorentzian kNN, squeeze, SMC BOS, Ichimoku, AVWAP). True OOS: 78-name discovery universe, entry book frozen as hold-out. Selected: Faber overlay + EMA v1.2 swing. Confluence does not win the train set. See `research/oos_holdout.md`.
 - [ ] Give Connors RSI(2) a stop and re-test. Best crisis performer, worst long-run performer, and the difference is that Connors ran it stopless.
 - [ ] Make the loop derive `warmup_bars` from the strategy's own indicators instead of taking it from the caller.
 - [ ] Nothing that tunes a length until the oil event dataset and a walk-forward protocol exist.

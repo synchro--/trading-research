@@ -27,7 +27,53 @@ TECH_BOOK = ["KLAC", "SMH", "NET", "GOOGL", "SPY", "QQQ", "URTH"]
 # the sample reaches back through 2000-02, 2008 and 2020 rather than one bull run.
 DIVERSE_BOOK = ["JPM", "LMT", "AMGN", "PFE", "MCD", "BRK-B", "EEM", "BTC-USD"]
 
-BOOKS = {"tech": TECH_BOOK, "diverse": DIVERSE_BOOK}
+# Frozen OOS hold-out. Do not rank or select strategies on this set.
+ENTRY_BOOK = [
+    "NVDA", "AVGO", "META", "AMD", "TSM", "NET", "KLAC", "SMH",
+    "BMPS.MI", "BPE.MI", "BNKE.PA",
+    "GLD", "VHYL.L", "SPY", "IQSE.DE",
+]
+
+# Discovery (train): disjoint from ENTRY_BOOK. Winners transfer to GLD / the hold-out.
+METALS_BOOK = ["SLV", "CPER", "PPLT", "PALL"]  # silver, copper, platinum + palladium
+
+INTL_STOCKS = [
+    # Italy — sectors, not BMPS/BPER
+    "ISP.MI", "ENI.MI", "ENEL.MI", "STLAM.MI", "RACE.MI", "PRY.MI", "REC.MI", "TIT.MI",
+    # UK
+    "HSBA.L", "SHEL.L", "AZN.L", "ULVR.L", "RIO.L", "RR.L", "VOD.L", "DGE.L",
+    # Germany
+    "SAP.DE", "SIE.DE", "ALV.DE", "BAS.DE", "BMW.DE", "MRK.DE", "DTE.DE", "RWE.DE",
+    # Japan
+    "7203.T", "6758.T", "8306.T", "6501.T", "4502.T", "8031.T", "9432.T",
+    # South Korea
+    "005930.KS", "005380.KS", "105560.KS", "035420.KS", "051910.KS",
+    # Hong Kong
+    "0700.HK", "0941.HK", "1299.HK", "0388.HK", "0005.HK", "0857.HK", "2318.HK",
+    # Emerging (listed names, not the hold-out book)
+    "VALE", "PBR", "ITUB", "INFY", "IBN", "BABA", "AMX", "MELI",
+]
+
+DISCOVERY_ETFS = [
+    "QQQ", "IWM", "EFA", "EEM",
+    "XLE", "XLF", "XLV", "XLI", "XLP", "VNQ",
+    "TLT", "DBC", "HYG",
+    "EWJ", "EWG", "EWU", "EWY", "EWH", "EWI",
+    "INDA", "EWZ", "EWW", "MCHI",
+]
+
+DISCOVERY_BOOK = METALS_BOOK + INTL_STOCKS + DISCOVERY_ETFS
+_overlap = set(DISCOVERY_BOOK) & set(ENTRY_BOOK)
+if _overlap:
+    raise RuntimeError(f"discovery/hold-out overlap: {_overlap}")
+
+BOOKS = {
+    "tech": TECH_BOOK,
+    "diverse": DIVERSE_BOOK,
+    "entry": ENTRY_BOOK,          # frozen hold-out
+    "metals": METALS_BOOK,         # silver/copper/platinum/palladium
+    "discovery": DISCOVERY_BOOK,   # train universe
+}
 
 # Slowest indicator in the registry is TSMOM's 252-bar lookback. Every strategy and
 # the benchmark start at the same bar so no one gets a head start.
@@ -39,6 +85,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--book", default="tech", choices=sorted(BOOKS), help="named symbol set")
     p.add_argument("--symbols", default="", help="override --book with a custom list")
+    p.add_argument("--strategies", default="", help="comma-separated registry names (default: all)")
     p.add_argument("--start", default="")
     p.add_argument("--end", default=END)
     p.add_argument("--cash", type=float, default=20_000.0)
@@ -50,7 +97,19 @@ def main() -> None:
 
     raw = args.symbols.split(",") if args.symbols else BOOKS[args.book]
     symbols = [_resolve(s) for s in raw if s.strip()]
-    start = args.start or ("2001-01-01" if args.book == "diverse" and not args.symbols else START)
+    start = args.start or (
+        "2001-01-01" if args.book == "diverse" and not args.symbols
+        else "2015-01-01" if args.book in {"entry", "discovery", "metals"} and not args.symbols
+        else START
+    )
+    strat_names = (
+        [s.strip() for s in args.strategies.split(",") if s.strip()]
+        if args.strategies
+        else list(REGISTRY)
+    )
+    unknown = [s for s in strat_names if s not in REGISTRY]
+    if unknown:
+        raise SystemExit(f"unknown strategies: {unknown}. known: {sorted(REGISTRY)}")
 
     data = {}
     for s in symbols:
@@ -69,7 +128,7 @@ def main() -> None:
         bench[s] = buy_hold(bars, start, args.cash, warmup_bars=args.warmup)
 
     rows: list[dict] = []
-    for name in REGISTRY:
+    for name in strat_names:
         for s, (bars, source) in data.items():
             res = run(bars, symbol=s, start=start, initial_cash=args.cash,
                       strategy=name, source=source, warmup_bars=args.warmup)
@@ -96,7 +155,7 @@ def main() -> None:
           f"{st.median(bh_dd):>8.1%}{'—':>8}{'—':>8}{'—':>8}{'100%':>7}")
 
     table = []
-    for name in REGISTRY:
+    for name in strat_names:
         r = [x for x in rows if x["strategy"] == name]
         sh = [x["sharpe"] or 0.0 for x in r]
         entry = {

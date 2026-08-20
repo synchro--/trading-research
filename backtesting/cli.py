@@ -33,6 +33,37 @@ SYMBOL_ALIASES = {
     "BRK": "BRK-B",
     "BRKB": "BRK-B",
     "BERKSHIRE": "BRK-B",
+    # Italian banks / Europe
+    "MPS": "BMPS.MI",
+    "BMPS": "BMPS.MI",
+    "MONTEPASCHI": "BMPS.MI",
+    "MONTEPASCHISIENABANK": "BMPS.MI",
+    "BPER": "BPE.MI",
+    "BPE": "BPE.MI",
+    # Euro Stoxx Banks ETF (Amundi) — closest liquid "Italian/Euro banks" sleeve
+    "ITALIANBANKS": "BNKE.PA",
+    "ITALYBANKS": "BNKE.PA",
+    "BNKE": "BNKE.PA",
+    "EWI": "EWI",
+    # Gold: Yahoo's GOLD ticker is Gold.com Inc.; use GLD for bullion ETF
+    "GOLD": "GLD",
+    "GLD": "GLD",
+    "BARRICK": "B",
+    "VHY": "VHYL.L",
+    "VHYL": "VHYL.L",
+    "VYM": "VYM",
+    # Invesco Global Active ESG Equity UCITS ETF EUR PfHdg Acc (ISIN IE00BJQRDP39)
+    "IQSE": "IQSE.DE",
+    "IE00BJQRDP39": "IQSE.DE",
+    # Precious / industrial metals ETFs (GLD is the hold-out gold proxy)
+    "SILVER": "SLV",
+    "SLV": "SLV",
+    "COPPER": "CPER",
+    "CPER": "CPER",
+    "PLATINUM": "PPLT",
+    "PPLT": "PPLT",
+    "PALLADIUM": "PALL",
+    "PALL": "PALL",
 }
 
 

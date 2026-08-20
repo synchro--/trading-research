@@ -130,6 +130,108 @@ def rolling_min(src: np.ndarray, length: int) -> np.ndarray:
     return out
 
 
+def stdev(src: np.ndarray, length: int) -> np.ndarray:
+    """Population stdev over a rolling window (Pine ta.stdev)."""
+    out = np.full(len(src), np.nan, dtype=float)
+    for i in range(length - 1, len(src)):
+        w = src[i - length + 1 : i + 1]
+        if np.any(np.isnan(w)):
+            continue
+        out[i] = float(np.std(w))
+    return out
+
+
+def linreg(src: np.ndarray, length: int, offset: int = 0) -> np.ndarray:
+    """Pine ta.linreg: value of the least-squares line at the window's last bar."""
+    out = np.full(len(src), np.nan, dtype=float)
+    x = np.arange(length, dtype=float)
+    x_mean = x.mean()
+    denom = float(((x - x_mean) ** 2).sum())
+    for i in range(length - 1, len(src)):
+        w = src[i - length + 1 : i + 1]
+        if np.any(np.isnan(w)):
+            continue
+        slope = float(((x - x_mean) * (w - w.mean())).sum()) / denom
+        intercept = float(w.mean()) - slope * x_mean
+        out[i] = intercept + slope * (length - 1 - offset)
+    return out
+
+
+def macd(close: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9):
+    line = ema(close, fast) - ema(close, slow)
+    sig = ema(np.where(np.isnan(line), 0.0, line), signal)
+    sig[np.isnan(line)] = np.nan
+    return line, sig, line - sig
+
+
+def supertrend(high: np.ndarray, low: np.ndarray, close: np.ndarray,
+               factor: float = 3.0, period: int = 10):
+    """TradingView ta.supertrend. Returns (st, direction).
+
+    direction follows the TV convention: -1 = uptrend (st below price),
+    +1 = downtrend. Long entry on flip to -1.
+    """
+    n = len(close)
+    hl2 = (high + low) / 2.0
+    a = atr(high, low, close, period)
+    upper = hl2 + factor * a
+    lower = hl2 - factor * a
+    st = np.full(n, np.nan, dtype=float)
+    direction = np.full(n, np.nan, dtype=float)
+    f_upper = np.full(n, np.nan, dtype=float)
+    f_lower = np.full(n, np.nan, dtype=float)
+    started = False
+    for i in range(n):
+        if np.isnan(a[i]):
+            continue
+        if not started:
+            f_upper[i], f_lower[i] = upper[i], lower[i]
+            direction[i] = 1.0
+            st[i] = f_upper[i]
+            started = True
+            continue
+        f_lower[i] = lower[i] if (lower[i] > f_lower[i - 1] or close[i - 1] < f_lower[i - 1]) else f_lower[i - 1]
+        f_upper[i] = upper[i] if (upper[i] < f_upper[i - 1] or close[i - 1] > f_upper[i - 1]) else f_upper[i - 1]
+        if st[i - 1] == f_upper[i - 1]:
+            direction[i] = -1.0 if close[i] > f_upper[i] else 1.0
+        else:
+            direction[i] = 1.0 if close[i] < f_lower[i] else -1.0
+        st[i] = f_lower[i] if direction[i] == -1.0 else f_upper[i]
+    return st, direction
+
+
+def pivot_low(low: np.ndarray, left: int, right: int) -> np.ndarray:
+    """Confirmed pivot lows. out[i] = index of the pivot bar confirmed AT bar i
+    (i.e. the pivot is at i - right), else -1. No lookahead: usable from bar i."""
+    n = len(low)
+    out = np.full(n, -1, dtype=int)
+    for i in range(left + right, n):
+        p = i - right
+        w = low[p - left : p + right + 1]
+        if np.any(np.isnan(w)):
+            continue
+        if low[p] == np.min(w) and np.sum(w == low[p]) == 1:
+            out[i] = p
+    return out
+
+
+def pivot_high(high: np.ndarray, left: int, right: int) -> np.ndarray:
+    n = len(high)
+    out = np.full(n, -1, dtype=int)
+    for i in range(left + right, n):
+        p = i - right
+        w = high[p - left : p + right + 1]
+        if np.any(np.isnan(w)):
+            continue
+        if high[p] == np.max(w) and np.sum(w == high[p]) == 1:
+            out[i] = p
+    return out
+
+
+def donchian_mid(high: np.ndarray, low: np.ndarray, length: int) -> np.ndarray:
+    return (rolling_max(high, length) + rolling_min(low, length)) / 2.0
+
+
 def crossover(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     out = np.zeros(len(a), dtype=bool)
     out[1:] = (a[1:] > b[1:]) & (a[:-1] <= b[:-1])

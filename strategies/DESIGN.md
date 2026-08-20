@@ -2,7 +2,7 @@
 
 Source of truth for the long-only swing system. Other agents implement from this file and [TODO.md](TODO.md). Do not invent rules that are not written here.
 
-**Status:** v1 frozen. Do not retune RSI, ATR, or EMA lengths until engine 0.1 has produced a baseline trade log.
+**Status:** v1.2 — RSI gate removed; ATR trail is stepped Chandelier (hard 3.5 → BE @ 1R → HH−3 ATR @ 2R). Do not retune lengths until a walk-forward protocol exists.
 
 ---
 
@@ -36,7 +36,7 @@ Source of truth for the long-only swing system. Other agents implement from this
 
 ## 3. v1 (frozen)
 
-All series are **daily** unless noted. Indicators: EMA(close, 50), EMA(close, 200), ATR(14), RSI(close, 14).
+All series are **daily** unless noted. Indicators: EMA(close, 50), EMA(close, 200), ATR(14).
 
 ### 3.1 Regime
 
@@ -52,8 +52,8 @@ All of the following must be true:
 
 1. `EMA50 > EMA200` (already in bull regime; the cross itself does not qualify).
 2. `close` crosses above `EMA50` (`ta.crossover(close, ema50)`).
-3. RSI(14) printed **below 50** at least once in the last **8** bars (a dip happened).
-4. RSI(14) on bar T is in **[40, 65]** (recovering, not washed out, not chasing).
+
+~~RSI dip / band gate removed (v1.1).~~ Two independent books (tech + diverse) showed the RSI filter identical to naked reclaim; it filtered nothing. Do not reintroduce without a trade-log proof.
 
 ### 3.3 Initial risk and size
 
@@ -61,22 +61,21 @@ All of the following must be true:
 - Position size = `(equity * 0.015) / initial_risk` (1.5% of equity at risk).
 - If `initial_risk <= 0`, skip the trade.
 
-### 3.4 Adaptive trail
+### 3.4 Stepped Chandelier trail (v1.2)
 
-Ratchet **up only** (longs). `R = (close - entry) / initial_risk`.
+Ratchet **up only** (longs). `R = (close - entry) / initial_risk`. `HH` = highest high since entry.
 
 ```
-active_mult = 3.5  if R < 1.5
-active_mult = 2.0  if R >= 1.5
-candidate   = close - active_mult * ATR(14)
-trail       = max(trail, candidate)
+R < 1.0   -> keep initial stop (entry − initial_risk). Do NOT trail from close.
+1 ≤ R < 2 -> trail floor = entry (breakeven lock)
+R ≥ 2.0   -> trail = max(entry, HH − 3.0 × ATR(14))   // LeBeau Chandelier
 ```
 
-On the first bar in the trade, `trail = entry - initial_risk` (not `close - ATR * mult`).
+On the first bar in the trade, `trail = entry - initial_risk`.
 
-**Same-bar rule (required).** Tomorrow’s stop is known at today’s close. Do not compute a new trail from bar T’s close and allow bar T’s low to hit it. Engine: the live stop on bar T is the trail from bar T−1 (or the initial stop on the entry bar). Pine: `process_orders_on_close=true` and the exit uses the **already-ratcheted** trail, then the trail is updated for the next bar.
+**Why this replaced close − 3.5 ATR → 2.0 ATR at 1.5R:** the old rule ratcheted the stop up from *close* while still underwater, creating many −0.5R noise exits, and most winners never reached 1.5R so the tight stage never fired (median winner ~1.26R). Hard stop until +1R + breakeven + Chandelier after +2R is the published structure (initial volatility stop + LeBeau trail) without searching new lengths.
 
-`initial_risk` stays frozen. The trail distance uses **live** ATR. Do not “fix” that mix in v1; it is documented in §5.
+**Same-bar rule (required).** Tomorrow’s stop is known at today’s close. Do not compute a new trail from bar T’s close/high and allow bar T’s low to hit it. Engine: the live stop on bar T is the trail from bar T−1 (or the initial stop on the entry bar). Pine: `process_orders_on_close=true` and the exit uses the **already-ratcheted** trail, then the trail is updated for the next bar.
 
 ### 3.5 Exits
 
@@ -91,19 +90,17 @@ No take-profit limit. No time stop in v1.
 
 Apply commission bps and optional slippage bps on every fill. TradingView without costs is not the baseline.
 
-### 3.7 Defaults (do not change in v1)
+### 3.7 Defaults (do not change without a new version bump)
 
 | Parameter | Value |
 |-----------|-------|
 | Fast EMA | 50 |
 | Slow EMA | 200 |
 | ATR length | 14 |
-| RSI length | 14 |
-| RSI dip lookback | 8 bars |
-| RSI band | 40–65 |
-| Base ATR multiple | 3.5 |
-| Tight ATR multiple | 2.0 |
-| Tighten at | 1.5R |
+| Initial ATR multiple | 3.5 |
+| Breakeven at | 1.0R |
+| Chandelier from | 2.0R |
+| Chandelier ATR multiple | 3.0 |
 | Risk per trade | 1.5% of equity |
 
 ---
@@ -112,11 +109,11 @@ Apply commission bps and optional slippage bps on every fill. TradingView withou
 
 Classical 50/200 + fixed ATR fails in three ways this system is built to avoid:
 
-1. **Chop.** Buying every 50-cross inside a range produces high churn. The regime gate (`EMA50 > EMA200`) plus “reclaim after a dip” is the filter.
-2. **Fixed ATR asymmetry.** A tight stop (1.5–2.0 ATR) shakes out healthy growth names; a static wide stop (4.5 ATR) gives back a trend. Wide (3.5) until 1.5R, then 2.0, matches how those names actually move. At 1.5R, price is `entry + 5.25 ATR`; the tight stop sits near `close - 2 ATR` and locks roughly 0.9R.
+1. **Chop.** Buying every 50-cross inside a range produces high churn. The regime gate (`EMA50 > EMA200`) is the primary filter; reclaim waits for price to return through the fast average after a pullback.
+2. **Fixed ATR asymmetry / premature trail.** A tight stop (1.5–2.0 ATR) shakes out healthy growth names; a static wide stop gives back a trend. v1.2 keeps the wide **initial** 3.5 ATR stop for sizing, but does **not** ratchet from close while underwater. At +1R lock breakeven; at +2R switch to a LeBeau Chandelier (`HH − 3 ATR`). That is the published structure without searching new multiples.
 3. **Buying the golden cross.** On SMH/QQQ the 50/200 cross often prints 15–25% off the low. A 3.5 ATR stop under that bar is a late entry with a wide stop. v1 waits for the first qualifying EMA50 reclaim instead.
 
-`RSI >= 45` at the reclaim bar (the previous Pine) kept late reclaims (RSI 55–70) and skipped deeper ones (RSI 35–44). The v1 band does the opposite: require evidence of a dip (`RSI < 50` in the last 8 bars) and refuse both washouts (`RSI < 40`) and chases (`RSI > 65`).
+The RSI band was removed after it matched naked reclaim on both the tech and diverse books. Do not retune RSI lengths to "make the gate work."
 
 The thesis of the trade is “bull regime.” A trail-only exit can give back a full 3.5 ATR in a slow roll over. Death-cross flatten belongs in v1.
 

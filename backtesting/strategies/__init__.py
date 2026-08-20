@@ -5,16 +5,24 @@ from backtesting.engine.types import Bar
 from backtesting.strategies.connors_rsi2 import ConnorsRsi2
 from backtesting.strategies.connors_rsi2_trail import ConnorsRsi2Trail
 from backtesting.strategies.donchian_55 import Donchian55
+from backtesting.strategies.confluence_v2 import ConfluenceV2
 from backtesting.strategies.ema50_reclaim import EmaReclaimNaked
 from backtesting.strategies.ema_gc_adaptive import EmaPullbackV1
 from backtesting.strategies.ema_pullback_voltarget import EmaPullbackVolTarget
 from backtesting.strategies.faber_sma200 import FaberSma200, FaberSma200Daily
+from backtesting.strategies.ichimoku import IchimokuCloud
+from backtesting.strategies.lorentzian_knn import LorentzianKnn
 from backtesting.strategies.rsi_trend_dip import RsiTrendDip
+from backtesting.strategies.sma50_reclaim import Sma50Reclaim
+from backtesting.strategies.smc_bos import SmcBos
+from backtesting.strategies.squeeze_momentum import SqueezeMomentum
+from backtesting.strategies.supertrend import SupertrendLong
 from backtesting.strategies.tsmom_12m import Tsmom12M
 
 REGISTRY = {
     "ema_pullback": EmaPullbackV1,
-    "ema50_reclaim": EmaReclaimNaked,
+    "ema50_reclaim": EmaReclaimNaked,  # alias of ema_pullback (RSI gate removed)
+    "sma50_reclaim": Sma50Reclaim,
     "rsi_trend_dip": RsiTrendDip,
     "donchian_55_20": Donchian55,
     "ema_pullback_vt": EmaPullbackVolTarget,
@@ -23,6 +31,12 @@ REGISTRY = {
     "faber_sma200": FaberSma200,
     "faber_sma200_daily": FaberSma200Daily,
     "tsmom_12m": Tsmom12M,
+    "supertrend": SupertrendLong,
+    "squeeze_momentum": SqueezeMomentum,
+    "lorentzian_knn": LorentzianKnn,
+    "smc_bos": SmcBos,
+    "ichimoku": IchimokuCloud,
+    "confluence_v2": ConfluenceV2,
 }
 
 

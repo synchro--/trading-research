@@ -1,0 +1,15 @@
+//@version=6
+// Fast-minus-slow RSI spread, converted from the original v1 script.
+// Positive = short-term momentum leading, negative = lagging.
+indicator("RSI Divergence (v6)", shorttitle="RSI Div")
+
+len_fast = input.int(5, "Length Fast RSI", minval=1)
+len_slow = input.int(14, "Length Slow RSI", minval=1)
+
+rsi_fast = ta.rsi(close, len_fast)
+rsi_slow = ta.rsi(close, len_slow)
+
+divergence = rsi_fast - rsi_slow
+
+plot(divergence, "Divergence", color=divergence > 0 ? color.lime : color.red, linewidth=2)
+hline(0)

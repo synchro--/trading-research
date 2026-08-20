@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class SharedRisk:
     atr_len: int = 14
     atr_base_mult: float = 3.5
+    # Legacy close-ATR trail (Connors trail / RSI dip). EMA/SMA use stepped Chandelier.
     trail_tight_mult: float = 2.0
     profit_threshold: float = 1.5
     risk_pct: float = 1.5
@@ -28,6 +29,7 @@ class Sizing:
 
 
 def atr_trail(close: float, atr: float, entry_px: float, initial_risk: float, risk: SharedRisk) -> float:
+    """Close − k×ATR trail used by non-EMA strategies (unchanged from v1)."""
     r = (close - entry_px) / initial_risk if initial_risk else 0.0
     mult = risk.trail_tight_mult if r >= risk.profit_threshold else risk.atr_base_mult
     return float(close - mult * atr)

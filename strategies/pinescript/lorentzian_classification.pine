@@ -1,0 +1,177 @@
+//@version=6
+// Lorentzian Classification — kNN with Lorentzian distance kernel.
+// Cleaned port of the community "Advanced Trading Dashboard" script:
+//   - removed private DskyzInvestments library imports (won't compile publicly)
+//   - removed request.footprint flow data (tick data unavailable)
+//   - kept the full kNN engine, signal logic, and a compact dashboard
+// Mirrored in backtesting/strategies/lorentzian_knn.py.
+indicator("Lorentzian Classification (kNN core)", shorttitle="Lorentz", overlay=true, max_labels_count=500)
+
+grp_lorentz = "Lorentzian Engine"
+k_neighbors        = input.int(4, "K Nearest Neighbors", minval=1, maxval=20, group=grp_lorentz)
+lookback           = input.int(100, "Historical Lookback", minval=50, maxval=500, group=grp_lorentz)
+prediction_horizon = input.int(5, "Prediction Horizon", minval=1, maxval=20, group=grp_lorentz)
+i_temporalDecay    = input.float(0.98, "Temporal Decay", minval=0.9, maxval=1.0, step=0.005, group=grp_lorentz)
+
+grp_features = "Feature Engineering"
+use_price      = input.bool(true, "Price Change Features", group=grp_features)
+use_volume     = input.bool(true, "Volume Profile Features", group=grp_features)
+use_volatility = input.bool(true, "Volatility Features", group=grp_features)
+use_momentum   = input.bool(true, "Momentum Features", group=grp_features)
+
+grp_signals = "Signal Generation"
+signal_threshold   = input.float(0.85, "Signal Threshold", minval=0.5, maxval=0.9, step=0.05, group=grp_signals)
+smooth_predictions = input.int(3, "Prediction Smoothing", minval=1, maxval=10, group=grp_signals)
+i_cooldown         = input.int(5, "Signal Cooldown (Bars)", minval=1, maxval=50, group=grp_signals)
+
+// ── Features ────────────────────────────────────────────────────────────────
+float atr14  = ta.atr(14)
+float avgVol = ta.sma(volume, 20)
+
+float price_feat1 = use_price ? (close - close[1]) / close[1] : 0
+float price_feat2 = use_price ? (close - close[2]) / close[2] : 0
+float price_feat3 = use_price ? (close - close[3]) / close[3] : 0
+float price_feat4 = use_price ? (close - close[5]) / close[5] : 0
+float price_feat5 = use_price ? (close - close[8]) / close[8] : 0
+float vol_feat1 = use_volume ? volume / avgVol : 0
+float vol_feat2 = use_volume ? volume[1] / avgVol : 0
+float vol_feat3 = use_volume ? volume[2] / avgVol : 0
+[bb_middle, bb_upper, bb_lower] = ta.bb(close, 20, 2)
+float bb_width = bb_upper - bb_lower
+float volat_feat1 = use_volatility ? atr14 / close : 0
+float volat_feat2 = use_volatility ? bb_width / close : 0
+float rsi_val = ta.rsi(close, 14)
+[macd_line, signal_line_macd, histogram_macd] = ta.macd(close, 12, 26, 9)
+float mom_feat1 = use_momentum ? (rsi_val - 50) / 50 : 0
+float mom_feat2 = use_momentum ? macd_line / close : 0
+
+normalize_series(float s, int len) =>
+    float min_val = ta.lowest(s, len)
+    float max_val = ta.highest(s, len)
+    float range_val = max_val - min_val
+    range_val > 0 ? 2 * (s - min_val) / range_val - 1 : 0.0
+
+float n_price1 = normalize_series(price_feat1, lookback)
+float n_price2 = normalize_series(price_feat2, lookback)
+float n_price3 = normalize_series(price_feat3, lookback)
+float n_price4 = normalize_series(price_feat4, lookback)
+float n_price5 = normalize_series(price_feat5, lookback)
+float n_vol1   = normalize_series(vol_feat1, lookback)
+float n_vol2   = normalize_series(vol_feat2, lookback)
+float n_vol3   = normalize_series(vol_feat3, lookback)
+float n_volat1 = normalize_series(volat_feat1, lookback)
+float n_volat2 = normalize_series(volat_feat2, lookback)
+float n_mom1   = mom_feat1
+float n_mom2   = normalize_series(mom_feat2, lookback)
+
+// ── Lorentzian kNN ──────────────────────────────────────────────────────────
+var array<float> dist_array    = array.new_float(lookback, 999999.0)
+var array<float> outcome_array = array.new_float(lookback, 0.0)
+
+array<float> curr_features = array.new_float(0)
+array.push(curr_features, n_price1)
+array.push(curr_features, n_price2)
+array.push(curr_features, n_price3)
+array.push(curr_features, n_price4)
+array.push(curr_features, n_price5)
+array.push(curr_features, n_vol1)
+array.push(curr_features, n_vol2)
+array.push(curr_features, n_vol3)
+array.push(curr_features, n_volat1)
+array.push(curr_features, n_volat2)
+array.push(curr_features, n_mom1)
+array.push(curr_features, n_mom2)
+
+float weighted_sum = 0.0
+float total_weight = 0.0
+float confidence_up = 0.0
+float confidence_down = 0.0
+
+if barstate.isconfirmed and bar_index >= (lookback + prediction_horizon + 10)
+    int start_idx = prediction_horizon
+    int end_idx = math.min(lookback - 1, bar_index - prediction_horizon - 10)
+    for i = start_idx to end_idx
+        array<float> hist_features = array.new_float(0)
+        array.push(hist_features, n_price1[i])
+        array.push(hist_features, n_price2[i])
+        array.push(hist_features, n_price3[i])
+        array.push(hist_features, n_price4[i])
+        array.push(hist_features, n_price5[i])
+        array.push(hist_features, n_vol1[i])
+        array.push(hist_features, n_vol2[i])
+        array.push(hist_features, n_vol3[i])
+        array.push(hist_features, n_volat1[i])
+        array.push(hist_features, n_volat2[i])
+        array.push(hist_features, n_mom1[i])
+        array.push(hist_features, n_mom2[i])
+        // Lorentzian distance: d(x,y) = Σ log(1 + |xᵢ - yᵢ|)
+        float distance = 0.0
+        for j = 0 to array.size(curr_features) - 1
+            float diff = array.get(curr_features, j) - array.get(hist_features, j)
+            distance += math.log(1.0 + math.abs(diff))
+        float decay = math.pow(i_temporalDecay, float(i))
+        distance := distance / math.max(decay, 0.01)
+        array.set(dist_array, i, distance)
+        float future_return = close[i - prediction_horizon] - close[i]
+        array.set(outcome_array, i, future_return > 0 ? 1.0 : -1.0)
+
+array<float> temp_dist = array.copy(dist_array)
+if bar_index >= (lookback + prediction_horizon + 10)
+    int start_idx = prediction_horizon
+    int end_idx = math.min(lookback - 1, bar_index - prediction_horizon - 10)
+    for k = 0 to k_neighbors - 1
+        float min_dist = 999999.0
+        int min_idx = -1
+        for i = start_idx to end_idx
+            float dist = array.get(temp_dist, i)
+            if dist < min_dist
+                min_dist := dist
+                min_idx := i
+        if min_idx >= 0 and min_dist < 999999.0
+            float weight = 1.0 / (1.0 + min_dist)
+            float outcome = array.get(outcome_array, min_idx)
+            weighted_sum += outcome * weight
+            total_weight += weight
+            if outcome > 0
+                confidence_up += weight
+            else
+                confidence_down += weight
+            array.set(temp_dist, min_idx, 999999.0)
+
+float raw_prediction = total_weight > 0 ? weighted_sum / total_weight : 0.0
+float prediction = ta.ema(raw_prediction, smooth_predictions)
+float confidence = total_weight > 0 ? math.abs(confidence_up - confidence_down) / total_weight : 0.0
+float smooth_confidence = ta.ema(confidence, smooth_predictions)
+
+// ── Signals with cooldown ───────────────────────────────────────────────────
+bool long_raw  = prediction > signal_threshold and smooth_confidence > 0.5
+bool short_raw = prediction < -signal_threshold and smooth_confidence > 0.5
+var bool prev_long = false
+var bool prev_short = false
+var int lastSignalBar = -9999
+bool cooldownClear = (bar_index - lastSignalBar) >= i_cooldown
+bool first_long = long_raw and not prev_long and cooldownClear
+bool first_short = short_raw and not prev_short and cooldownClear
+if first_long or first_short
+    lastSignalBar := bar_index
+prev_long := long_raw
+prev_short := short_raw
+
+// ── Visuals ─────────────────────────────────────────────────────────────────
+plotshape(first_long, "Long", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small)
+plotshape(first_short, "Short", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small)
+bgcolor(long_raw ? color.new(color.lime, 94) : short_raw ? color.new(color.red, 94) : na)
+
+var table dash = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 20), border_width=1)
+if barstate.islast
+    table.cell(dash, 0, 0, "LORENTZ kNN", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 0, prediction > signal_threshold ? "LONG" : prediction < -signal_threshold ? "SHORT" : "NEUTRAL", text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 1, "Pred", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 1, str.tostring(prediction, "#.###"), text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 0, 2, "Conf", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 2, str.tostring(smooth_confidence * 100, "#.#") + "%", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 0, 3, "Cooldown", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 3, cooldownClear ? "ready" : str.tostring(i_cooldown - (bar_index - lastSignalBar)) + " bars", text_color=color.white, text_size=size.tiny)
+
+alertcondition(first_long, "Lorentzian Long", "Lorentzian Classifier: LONG signal")
+alertcondition(first_short, "Lorentzian Short", "Lorentzian Classifier: SHORT signal")
