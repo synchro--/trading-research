@@ -26,7 +26,7 @@ Source of truth for the long-only swing system. Other agents implement from this
 |----------|------|---------|
 | This file | Frozen v1 spec | Spec |
 | [TODO.md](TODO.md) | Work queue | Tasks |
-| [pinescript/ema_gc_adaptive.pine](pinescript/ema_gc_adaptive.pine) | TradingView mirror of v1 | Yes — this is what 0.1 mirrors |
+| [pinescript/ema_gc_adaptive.pine](pinescript/ema_gc_adaptive.pine) | TradingView mirror of v1.2 | Yes |
 | [pinescript/etf_bottom_finder.pine](pinescript/etf_bottom_finder.pine) | Chart overlay for discretionary ETF adds | **No** |
 | `golden_cross_strategy.pine`, `rsi_strategy.pine`, `bollinger_bands_strategy.pine` | Legacy examples | No |
 
@@ -141,70 +141,49 @@ The thesis of the trade is “bull regime.” A trail-only exit can give back a 
 
 ## 6. v2 backlog
 
-Blocked until engine 0.1 has a baseline `trades.csv`. Then, in order:
+Engine 0.1 exists. Do **not** add weekly/OBV/Keltner or retune lengths. The RSI band was deleted (inert). Optional later, only from a live trade log:
 
-1. Weekly EMA slope as a **gate** (not a second entry). `request.security` / resampled weekly close.
-2. RSI band retune from the trade log (not from intuition).
-3. Optional time stop (e.g. flatten after N bars if still `R < 1`).
-4. Evaluate Keltner/vol bands vs static ATR multiples.
-5. OBV / accumulation last, if at all.
+1. Weekly EMA slope as a **gate** (not a second entry).
+2. Optional time stop (flatten after N bars if still `R < 1`).
 
-Do not add these in engine 0.1.
+A rolling walk-forward **re-fit** (the ML pattern: re-estimate parameters every k months) is not useful here. Lengths are literature defaults, not fitted weights. The useful analogue — freeze the rule, score names and years that were not used to choose it — is done in §6d.
+
+Do not add these in a new engine pass.
 
 ---
 
-## 6b. Measured baseline (2026-08, engine 0.1)
+## 6b. Measured baseline (refreshed 2026-08, EMA v1.2)
 
-Book: KLAC, SMH, NET, GOOGL, SPY, QQQ, URTH. Live window **2021-06-01 → 2026-08-13**
-(the first date every 200-period indicator is warm — starting earlier silently gifts
-buy-and-hold the months when SMA200-based rules are still NaN and stuck in cash).
-Reproduce with `python -m backtesting.compare`.
+Book: KLAC, SMH, NET, GOOGL, SPY, QQQ, URTH. Live window **2021-06-01 → 2026-08-13**.
+Reproduce with `python -m backtesting.compare --book tech`.
 
 | System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
 |---|---|---|---|---|
-| Buy & hold | 0.79 | 22.8% | 43.5% | — |
-| Faber SMA200 | **0.85** | 15.0% | **22.1%** | 4/7 |
-| TSMOM 12-month | 0.71 | 10.0% | 23.5% | 2/7 |
-| Connors RSI(2) | 0.50 | 3.3% | 9.6% | 1/7 |
-| Connors RSI(2) + ATR trail | 0.48 | 6.5% | 17.1% | 2/7 |
-| **EMA Pullback v1** | 0.44 | 1.1% | 5.5% | 0/7 |
-| Naked EMA50 reclaim | 0.44 | 1.1% | 5.5% | 0/7 |
-| Donchian 55/20 | 0.16 | 1.0% | 9.1% | 0/7 |
-| RSI trend dip | -0.00 | -0.0% | 5.8% | 0/7 |
+| Buy & hold | 0.81 | 23.0% | 43.6% | — |
+| Faber SMA200 | **0.87** | 15.3% | **26.9%** | 4/7 |
+| TSMOM 12-month | 0.82 | 12.8% | 22.6% | 3/7 |
+| Connors RSI(2) + ATR trail | 0.63 | 7.5% | 19.6% | 2/7 |
+| Connors RSI(2) | 0.41 | 3.7% | 9.9% | 0/7 |
+| **EMA Pullback v1.2** | 0.27 | 0.7% | **6.8%** | 0/7 |
+| Donchian 55/20 | 0.22 | 1.1% | 8.7% | 0/7 |
+| RSI trend dip | 0.10 | 0.2% | 5.0% | 0/7 |
 
-Findings that change the v2 priorities:
+`ema50_reclaim` is an alias of `ema_pullback` (RSI gate removed). Findings that still hold:
 
-1. **v1's RSI gate is inert.** Naked EMA50 reclaim scores identically on every
-   symbol except GOOGL. Item 2 above (retune the RSI band) should become *delete
-   the RSI band* unless a trade log shows it filtering something.
-2. **v1's 1.1% CAGR is a sizing artifact.** 1.5% risk over a 3.5-ATR stop deploys
-   ~15-20% of equity and the rules are in the market ~33% of the time, so the book
-   is ~94% cash. A 20% vol target leaves Sharpe flat (0.44 → 0.46) and triples CAGR
-   (1.1% → 3.9%). Sharpe is scale-invariant, CAGR is not — never compare systems on
-   CAGR when their sizing differs.
-3. **The frozen risk model is the good part.** v1 has by far the lowest drawdown of
-   anything tested (5.5% median vs 43.5% buy-and-hold) and lost 1.8% in 2022 while
-   buy-and-hold gave back 40.9%. The entry signal is the weak half, not the exit.
-4. **Faber's 200-day rule is the benchmark to beat**, not v1. It is simpler than v1,
-   beats it on Sharpe and by 14 points of CAGR, and halves buy-and-hold's drawdown.
-   Its weakness is whipsaw: 35 round trips in 2022 for -8.6%.
+1. **RSI gate deleted.** It matched naked reclaim on two books. Do not bring it back.
+2. **CAGR is a sizing artifact.** 1.5% risk over a 3.5-ATR stop deploys ~15–20% of equity. Never rank systems on CAGR when sizing differs.
+3. **The risk block is the good part.** Lowest drawdown on this book (~7% vs 44% buy-and-hold). The entry is the weak half versus Faber on a 5-year tech sample.
+4. **Faber is the overlay to beat on this sample**, not the swing timer. Whipsaw in 2022 remains its cost.
 
-Sample caveat: 7 correlated US tech-heavy names, ~5 years, one bear market. Median
-Sharpe gaps under ~0.2 are not distinguishable from noise here. Do not promote a
-system into v2 on this evidence alone.
-
-*(Figures above refreshed after the Faber monthly fix and the shared 252-bar warmup;
-see §6c. The tech-book conclusions did not change, the levels moved slightly.)*
+This 7-name window is **not** where v1.2 was selected. Use §6d for that. Median Sharpe gaps under ~0.2 are noise here.
 
 ---
 
-## 6c. Out-of-sample: uncorrelated book, 2001-2026
+## 6c. Uncorrelated book, 2001-2026
 
-Book: JPM (bank), LMT (defense), AMGN (biotech), PFE (pharma), MCD (consumer
-discretionary), BRK-B, EEM (emerging markets), BTC-USD. Mean pairwise daily-return
-correlation **0.33** (tech book was ~0.7-0.9). Yahoo **total-return** bars — Yahoo's
-raw OHLC is split- but not dividend-adjusted, which alone made PFE show a negative
-26-year return. Reproduce with `python -m backtesting.compare --book diverse`.
+Book: JPM, LMT, AMGN, PFE, MCD, BRK-B, EEM, BTC-USD. Mean pairwise daily-return
+correlation **0.33**. Yahoo **total-return** bars. Reproduce with
+`python -m backtesting.compare --book diverse`.
 
 | System | Median Sharpe | Median CAGR | Median maxDD | Beats B&H |
 |---|---|---|---|---|
@@ -212,40 +191,35 @@ raw OHLC is split- but not dividend-adjusted, which alone made PFE show a negati
 | TSMOM 12-month | 0.43 | 5.8% | 46.2% | 1/8 |
 | Faber SMA200 (monthly) | 0.38 | 5.5% | 55.5% | 2/8 |
 | Faber SMA200 (daily) | 0.32 | 3.9% | 54.0% | 1/8 |
-| **EMA Pullback v1** | 0.27 | 0.8% | **9.4%** | 0/8 |
-| Naked EMA50 reclaim | 0.27 | 0.8% | 9.4% | 0/8 |
+| **EMA Pullback v1.2** | 0.30 | 0.8% | **9.7%** | 1/8 |
 | Donchian 55/20 | 0.24 | 1.1% | 15.6% | 1/8 |
 | RSI trend dip | 0.19 | 0.4% | 9.1% | 0/8 |
 | Connors RSI(2) + trail | 0.18 | 1.4% | 40.8% | 1/8 |
 | Connors RSI(2) | 0.12 | 0.6% | 30.7% | 0/8 |
 
-What changed versus §6b:
+What still holds versus §6b:
 
-1. **Faber was mis-implemented.** The 2007 paper samples the moving average
-   *monthly*; the first pass checked it daily. Over 2001-2026 the daily version
-   round-trips JPM 118 times for a 74% drawdown — worse than buy-and-hold. Both are
-   registered (`faber_sma200`, `faber_sma200_daily`) because the gap is the lesson:
-   sampling frequency dominated any parameter choice here.
-2. **Faber's win did not generalize.** It beat buy-and-hold on the tech book and
-   loses to it on this one. §6b's headline should be read as sample-specific.
-3. **Connors RSI(2) was a regime artifact** — 0.42 on the tech book, 0.12 here,
-   negative on AMGN and PFE. Stopless mean reversion gets run over across 25 years.
-   It still had the best 2007-2009 crisis showing (+1.7% CAGR, 6.6% DD vs
-   buy-and-hold's -3.4% / 53.0%), so the entry is real and the missing stop is fatal.
-4. **The RSI gate is inert — confirmed twice.** Naked EMA50 reclaim matches full v1
-   on median Sharpe, CAGR and drawdown on both books, differing on 3 of 15 symbols.
-   Two independent samples agree. Delete it.
-5. **v1's risk model generalized; its entry did not.** Median drawdown 9.4% here vs
-   5.5% on tech, on assets it had never seen including BTC (6.8% vs 83.4%
-   buy-and-hold). Entry Sharpe decayed 0.46 → 0.27 like everything else.
+1. **Faber monthly vs daily.** Sampling frequency dominated length choice. Daily Faber round-trips JPM 118 times and can draw down worse than buy-and-hold.
+2. **Faber's tech-book win did not generalize** to this book.
+3. **Connors without a stop** is a 25-year loser and a 2007–09 survivor. The missing stop is the open Connors item, not EMA.
+4. **v1.2 risk generalized; the entry is not an overlay.** Drawdown stays ~10% including BTC (vs 83% buy-and-hold). Sharpe is below buy-and-hold because the book is mostly cash.
 
-Spearman rank correlation of median Sharpe between the two books is **0.71** — the
-broad ordering survives, the levels do not.
+---
 
-Open item: every result here is a *single-asset* application of rules Faber and MOP
-designed for diversified portfolios. The paper's ~10% drawdown comes from five
-uncorrelated sleeves each carrying the timing rule. A portfolio-level test of this
-book is the missing experiment, and is the most likely place a real edge shows up.
+## 6d. Disjoint-name hold-out (how v1.2 was selected)
+
+The 15-name entry book (NVDA…IQSE.DE, including GLD) was **frozen**. Selection used 78 names with **zero ticker overlap** (metals SLV/CPER/PPLT/PALL, one stock per sector in IT/UK/DE/JP/KR/HK/EM, plus country/sector ETFs). See [`research/oos_holdout.md`](../research/oos_holdout.md).
+
+That is the right validation for a **frozen published rule**: new assets, not a rolling parameter re-fit.
+
+**Selected before looking at the hold-out**
+
+- Overlay: **Faber SMA200 monthly** (best median Sharpe on 78 names; stable in 2015–2020 and 2021–2026).
+- Swing: **EMA v1.2** (flat 0.20 / 0.20 on that split). TSMOM dropped (negative E[R] in 2015–2020). Confluence v2 lost to EMA on the train set — do not treat a 0.02 hold-out Sharpe gap as selection.
+
+**Hold-out book (unseen):** Faber median Sharpe 0.74 at ~38% DD; EMA v1.2 0.56 at ~7% DD. GLD (metals transferred): EMA 0.63 Sharpe, 8.3% DD.
+
+Pine: `pinescript/faber_sma200.pine` (allocation) and `pinescript/ema_gc_adaptive.pine` (swing).
 
 ---
 

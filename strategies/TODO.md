@@ -76,4 +76,5 @@ Walk-forward, parameter grids, paper orders, shorts, minute bars, weekly/OBV/Kel
 - [x] Community Pine suite tested (supertrend, Lorentzian kNN, squeeze, SMC BOS, Ichimoku, AVWAP). True OOS: 78-name discovery universe, entry book frozen as hold-out. Selected: Faber overlay + EMA v1.2 swing. Confluence does not win the train set. See `research/oos_holdout.md`.
 - [ ] Give Connors RSI(2) a stop and re-test. Best crisis performer, worst long-run performer, and the difference is that Connors ran it stopless.
 - [ ] Make the loop derive `warmup_bars` from the strategy's own indicators instead of taking it from the caller.
-- [ ] Nothing that tunes a length until the oil event dataset and a walk-forward protocol exist.
+- [x] Disjoint-name hold-out (78 discovery names, entry book frozen). Rolling ML-style walk-forward re-fits are not planned — lengths are not estimated weights. See DESIGN §6d.
+- [ ] Nothing that tunes a length.

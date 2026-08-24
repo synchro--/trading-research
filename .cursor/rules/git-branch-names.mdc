@@ -1,0 +1,8 @@
+---
+description: Git branch naming — never use a cursor/ prefix
+alwaysApply: true
+---
+
+# Branch names
+
+Never prefix branches with `cursor/`. Name them naturally from the work, e.g. `ema-v12-oos-holdout`, `fix-pine-v6`. If a create-branch action suggests `cursor/`, ignore that prefix.
