@@ -1,0 +1,114 @@
+//@version=6
+// Ichimoku Cloud strategy (9/26/52, Hosoda) — long-only, tradable mirror of
+// backtesting/strategies/ichimoku.py (which mirrors ichimoku_suite.pine).
+// Entry:   TK cross (tenkan over kijun) while price is above the cloud,
+//          with chikou confirmation (close > close 26 bars ago).
+// Flatten: close crosses below the cloud bottom (regime off).
+// Risk:    v1.2 stepped Chandelier — hard 3.5 ATR → BE at 1R → HH−3 ATR at 2R.
+strategy("Ichimoku Cloud Strategy",
+     overlay=true,
+     initial_capital=20000,
+     currency=currency.USD,
+     default_qty_type=strategy.percent_of_equity,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.percent,
+     commission_value=0.1)
+
+grp_ich      = "Ichimoku (Hosoda)"
+conversion_len = input.int(9,   "Tenkan (Conversion)", group=grp_ich)
+base_len     = input.int(26,  "Kijun (Base)",        group=grp_ich)
+span_b_len   = input.int(52,  "Senkou Span B",       group=grp_ich)
+displacement = input.int(26,  "Displacement",        group=grp_ich)
+
+grp_risk          = "Stepped Chandelier Risk"
+atr_len           = input.int(14, "ATR Length", group=grp_risk)
+atr_base_mult     = input.float(3.5, "Initial ATR Stop Mult", group=grp_risk, step=0.1)
+be_r              = input.float(1.0, "Breakeven at R", group=grp_risk, step=0.1)
+trail_r           = input.float(2.0, "Chandelier from R", group=grp_risk, step=0.1)
+chandelier_mult   = input.float(3.0, "Chandelier ATR Mult", group=grp_risk, step=0.1)
+risk_per_t        = input.float(1.5, "Risk % Per Trade", group=grp_risk)
+
+donchian(len) => math.avg(ta.highest(len), ta.lowest(len))
+
+tenkan = donchian(conversion_len)
+kijun  = donchian(base_len)
+span_a = math.avg(tenkan, kijun)
+span_b = donchian(span_b_len)
+
+// Cloud at current bar = spans computed `displacement` bars ago (no lookahead)
+float cloud_top = math.max(span_a[displacement], span_b[displacement])
+float cloud_bot = math.min(span_a[displacement], span_b[displacement])
+
+atr = ta.atr(atr_len)
+
+bool tk_cross_up  = ta.crossover(tenkan, kijun)
+bool chikou_ok    = close > close[displacement]
+bool above_cloud  = close > cloud_top
+bool regime_break = ta.crossunder(close, cloud_bot)
+
+long_trigger = tk_cross_up and above_cloud and chikou_ok and not na(atr) and not na(cloud_top)
+
+var float entry_price    = na
+var float trail_price    = na
+var float initial_risk   = na
+var float hh_since_entry = na
+
+if strategy.position_size > 0
+    if na(entry_price)
+        entry_price    := strategy.position_avg_price
+        initial_risk   := atr * atr_base_mult
+        trail_price    := entry_price - initial_risk
+        hh_since_entry := high
+
+    hh_since_entry := math.max(hh_since_entry, high)
+    unrealized_r   = (close - entry_price) / (initial_risk > 0 ? initial_risk : 1.0)
+
+    // Stepped: no close-ratchet while R < be_r; BE floor; then Chandelier.
+    float candidate = trail_price
+    if unrealized_r >= trail_r
+        candidate := math.max(entry_price, hh_since_entry - chandelier_mult * atr)
+    else if unrealized_r >= be_r
+        candidate := entry_price
+
+    if regime_break
+        strategy.close("Long", comment="Regime")
+    else
+        strategy.exit("Exit", "Long", stop=trail_price, comment="Trail Hit")
+
+    trail_price := math.max(trail_price, candidate)
+else
+    entry_price    := na
+    trail_price    := na
+    initial_risk   := na
+    hh_since_entry := na
+
+risk_usd = strategy.equity * (risk_per_t / 100)
+sl_dist  = atr * atr_base_mult
+pos_qty  = sl_dist > 0 ? risk_usd / sl_dist : 0
+
+if long_trigger and strategy.position_size == 0 and barstate.isconfirmed
+    strategy.entry("Long", strategy.long, qty=pos_qty, comment="Entry")
+    strategy.exit("Exit", "Long", stop=close - sl_dist, comment="Trail Hit")
+
+new_exit  = strategy.closedtrades > strategy.closedtrades[1]
+exit_cmt  = strategy.closedtrades > 0 ? strategy.closedtrades.exit_comment(strategy.closedtrades - 1) : ""
+trail_hit = new_exit and str.contains(exit_cmt, "Trail")
+regime_out = new_exit and str.contains(exit_cmt, "Regime")
+
+pa = plot(span_a, "Senkou A", offset=displacement - 1, color=color.new(color.green, 60))
+pb = plot(span_b, "Senkou B", offset=displacement - 1, color=color.new(color.red, 60))
+fill(pa, pb, color=span_a > span_b ? color.new(color.green, 88) : color.new(color.red, 88), title="Cloud")
+plot(tenkan, "Tenkan", color=color.aqua, linewidth=1)
+plot(kijun, "Kijun", color=color.maroon, linewidth=1)
+plot(close, "Chikou (displaced)", offset=-displacement, color=color.new(color.purple, 40))
+plot(strategy.position_size > 0 ? trail_price : na, "Stepped Trail", color=color.lime, style=plot.style_linebr, linewidth=2)
+
+plotshape(long_trigger and strategy.position_size == 0, title="Entry", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small, text="IN")
+plotshape(trail_hit, title="Trail Hit", style=shape.flag, location=location.abovebar, color=color.red, size=size.tiny, text="TRAIL")
+plotshape(regime_out, title="Regime Off", style=shape.xcross, location=location.abovebar, color=color.red, size=size.tiny, text="OFF")
+
+alertcondition(long_trigger, title="Ichimoku LONG", message="TK cross above cloud with chikou confirmation")
+alertcondition(trail_hit, title="Trail hit", message="Chandelier trail stop hit")
+alertcondition(regime_break, title="Ichimoku regime off", message="Close crossed below the cloud")

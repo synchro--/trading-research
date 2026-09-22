@@ -11,7 +11,14 @@ This repo hosts trading strategies for TradingView (Pine Script v6) and notes fo
   - `templates/strategy_template.pine` — starter template (Pine v6)
 - `backtesting/` — daily single-symbol engine plus portfolio and ETF-entry experiments
 - `research/` — raw ideas, links, and experiment reports
+  - `dca_master_report.md` — consolidated report with figures: LS vs DCA, dip timing, money-market cushions, final tournament
   - `portfolio_and_bottoms.md` — equal-weight basket and 29-ETF lump-sum results
+  - `dca_vs_lumpsum.md` — DCA vs lump-sum over rolling 10-20y windows, 4 classic portfolios
+  - `dip_dca.md` — oracle dip timing vs mid-month DCA + dip-triggered contribution rules
+  - `mm_cushion.md` — 30k money-market cushion + 500/mo: lump sum vs parked vs dip-harvested reserve
+  - `hybrid_split.md` — staged windfall deployment: α lump + tail DCA, regret frontier
+  - `crash_deploy.md` — cash-is-king: wait for a −20%/−30% drawdown, then deploy
+  - `deep_history.md` — lump sum vs DCA on US data since 1926 (Ken French + FRED)
 
 ## Quick start (TradingView)
 1. Open TradingView → Pine Editor.
@@ -29,10 +36,17 @@ This repo hosts trading strategies for TradingView (Pine Script v6) and notes fo
 
 ## Reproduce research
 ```bash
-python -m backtesting.compare --book diverse
-python -m backtesting.portfolio
-python -m backtesting.bottom_finder
-python -m unittest discover -s backtesting/tests -v
+uv run python -m backtesting.compare --book diverse
+uv run python -m backtesting.portfolio
+uv run python -m backtesting.bottom_finder
+uv run python -m backtesting.dca_vs_lumpsum --reuse-cache
+uv run python -m backtesting.mm_cushion --reuse-cache
+uv run python -m backtesting.dip_dca --reuse-cache
+uv run python -m backtesting.hybrid_split --reuse-cache
+uv run python -m backtesting.crash_deploy --reuse-cache
+uv run python -m backtesting.deep_history
+uv run python -m backtesting.research_plots
+uv run python -m unittest discover -s backtesting/tests -v
 ```
 
 Deep-history experiments use Yahoo total-return bars; recent single-stock runs can

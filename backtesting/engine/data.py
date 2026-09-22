@@ -6,6 +6,7 @@ import json
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from backtesting.engine.types import Bar
 
@@ -130,7 +131,7 @@ def fetch_yahoo(symbol: str, start: str, end: str) -> list[Bar]:
     p1 = int(datetime.fromisoformat(start).replace(tzinfo=timezone.utc).timestamp())
     p2 = int((datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=2)).timestamp())
     url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}"
         f"?interval=1d&period1={p1}&period2={p2}&events=div%7Csplit"
     )
     payload = _http_json(url)
